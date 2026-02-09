@@ -1,6 +1,5 @@
 # Ludo AI Plugin for Unity - Complete Guide
 
-![Ludo AI Plugin](https://ludo.ai/logo.png)
 
 > **AI-Powered Asset Generation for Unity**  
 > Generate sprites, images, 3D models, and audio directly in your Unity Editor using Ludo AI's powerful API.
