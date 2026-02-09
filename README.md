@@ -1,5 +1,6 @@
 # Ludo AI Plugin for Unity - Complete Guide
 
+![Ludo AI Plugin](https://ludo.ai/logo.png)
 
 > **AI-Powered Asset Generation for Unity**  
 > Generate sprites, images, 3D models, and audio directly in your Unity Editor using Ludo AI's powerful API.
@@ -18,7 +19,7 @@
 - [Settings](#settings)
 - [Best Practices](#best-practices)
 - [Troubleshooting](#troubleshooting)
-- [API Reference](#api-reference)
+- [API & MCP Integration](#api--mcp-integration)
 - [FAQ](#faq)
 
 ---
@@ -652,268 +653,52 @@ All plugin operations log to Unity Console:
 
 ---
 
-## API Reference
+## API & MCP Integration
 
-### Base URL
+The Ludo AI Plugin uses the Ludo AI REST API under the hood to communicate with AI services. If you're interested in building custom integrations, automating workflows, or using MCP (Model Context Protocol) with AI assistants like Claude or Cursor, visit the official API documentation.
 
-```
-https://api.ludo.ai/api
-```
+### Official Documentation
 
-### Authentication
+**[Ludo AI API & MCP Integration Documentation](https://ludo.ai/api-mcp-integration)**
 
-All requests require authentication using one of these headers:
+The official documentation includes:
 
-```
-Authorization: ApiKey YOUR_API_KEY
-```
+- **REST API Reference**: Complete endpoint documentation with request/response examples
+- **MCP Integration**: Connect Ludo AI to Claude, Cursor, and other AI assistants
+- **Authentication**: API key setup and usage
+- **Credit System**: Understand credit costs for different operations
+- **Rate Limits**: API quotas and timeout information
+- **Code Examples**: Sample implementations and integrations
 
-or
+### Quick Links
 
-```
-ApiKey: YOUR_API_KEY
-```
+- **Base URL**: `https://api.ludo.ai/api/`
+- **MCP Server**: `https://mcp.ludo.ai/mcp`
+- **Authentication**: `Authentication: ApiKey YOUR_API_KEY`
 
-### Endpoints
+### Available Features via API
 
-#### 1. Refresh Initial Payload
+The API provides programmatic access to all plugin features:
 
-```
-POST /refresh
-```
+- **Images & Animation**: Sprites, icons, UI assets, textures, spritesheet animations
+- **Video & 3D**: Motion videos, 2D-to-3D model conversion
+- **Audio**: Sound effects, music, voice generation, speech cloning
 
-Fetches art styles, perspectives, and other options.
+### Integration Use Cases
 
-**Response:** JSON with available options
+**Custom Pipelines**: Automate asset generation in your build pipeline
 
----
+**Batch Processing**: Generate hundreds of assets via scripts
 
-#### 2. Generate Sprite/Image
+**AI Assistant Integration**: Use natural language to generate assets in Claude or Cursor
 
-```
-POST /assets/image
-```
+**Game Engine Integration**: Build custom plugins for other engines (Godot, Unreal, etc.)
 
-**Request Body:**
+**Web Applications**: Create web-based asset generation tools
 
-```json
-{
-  "prompt": "pixel art treasure chest",
-  "art_style": "Pixel Art (16-Bit)",
-  "perspective": "Top-Down",
-  "quality": "high",
-  "image_type": "sprite",
-  "genre": "Casual",
-  "platform": "Mobile",
-  "aspect_ratio": "ar_1_1",
-  "num_images": 1,
-  "augment_prompt": true
-}
-```
+For complete technical details, endpoint specifications, and integration guides, visit:
 
-**Response:**
-
-```json
-{
-  "id": "12345",
-  "url": "https://api.ludo.ai/images/12345",
-  "status": "completed"
-}
-```
-
----
-
-#### 3. Animate Sprite to Spritesheet
-
-```
-POST /assets/sprite/animate
-```
-
-**Request Body:**
-
-```json
-{
-  "image_url": "https://...",
-  "motion_description": "walking cycle animation",
-  "frames": 16,
-  "frame_size": 128,
-  "loop": true,
-  "crop": true,
-  "pixel_filter": "medium",
-  "model": "standard",
-  "duration": 1.0
-}
-```
-
-**Response:**
-
-```json
-{
-  "spritesheet_url": "https://...",
-  "gif_url": "https://...",
-  "video_url": "https://..."
-}
-```
-
----
-
-#### 4. Generate 3D Model
-
-```
-POST /assets/3d-model
-```
-
-**Request Body:**
-
-```json
-{
-  "image": "base64_encoded_image_or_url",
-  "target_face_count": 10000,
-  "texture_size": 2048,
-  "texture_type": "pbr",
-  "high_detail": false
-}
-```
-
-**Response:**
-
-```json
-{
-  "model_id": "67890",
-  "snapshots": ["url1", "url2", "url3"],
-  "download_url": "https://..."
-}
-```
-
----
-
-#### 5. Generate Sound Effect
-
-```
-POST /audio/sound-effect
-```
-
-**Request Body:**
-
-```json
-{
-  "description": "sword slash whoosh",
-  "duration": 0,
-  "augment_prompt": true
-}
-```
-
-**Response:**
-
-```json
-{
-  "audio_url": "https://...",
-  "duration": 1.5
-}
-```
-
----
-
-#### 6. Generate Music
-
-```
-POST /audio/music
-```
-
-**Request Body:**
-
-```json
-{
-  "description": "upbeat electronic game music",
-  "lyrics": "optional lyrics here",
-  "augment_prompt": true
-}
-```
-
----
-
-#### 7. Generate Voice
-
-```
-POST /audio/voice
-```
-
-**Request Body:**
-
-```json
-{
-  "voice_description": "deep male warrior voice",
-  "text": "The battle has begun!",
-  "voice_type": "human",
-  "augment_prompt": true
-}
-```
-
----
-
-#### 8. Generate Speech (Clone)
-
-```
-POST /audio/speech
-```
-
-**Request Body:**
-
-```json
-{
-  "text": "Your text here (max 1000 chars)",
-  "voice_sample": "base64_or_url"
-}
-```
-
----
-
-#### 9. Generate Speech (Preset)
-
-```
-POST /audio/speech-preset
-```
-
-**Request Body:**
-
-```json
-{
-  "text": "Your text here (max 1000 chars)",
-  "voice_preset": "Serious woman",
-  "emotion": "Happy",
-  "language": "English"
-}
-```
-
----
-
-#### 10. Get Image by ID
-
-```
-GET /images/{imageId}?format=jpeg
-```
-
-Returns image file.
-
----
-
-### Error Codes
-
-| Code | Meaning | Solution |
-|------|---------|----------|
-| 200 | Success | Request completed successfully |
-| 400 | Bad Request | Check parameters and request format |
-| 403 | Forbidden | Invalid or missing API key |
-| 404 | Not Found | Endpoint or resource doesn't exist |
-| 429 | Too Many Requests | Rate limited, wait and retry |
-| 500 | Server Error | Temporary issue, try again later |
-| 504 | Gateway Timeout | Request took too long (max 10 min) |
-
-### Rate Limits
-
-- Timeout per request: 600 seconds (10 minutes)
-- Check Ludo AI documentation for rate limits
-- Implement retry logic with exponential backoff
+**[https://ludo.ai/api-mcp-integration](https://ludo.ai/api-mcp-integration)**
 
 ---
 
@@ -923,9 +708,6 @@ Returns image file.
 
 **Q: How much does the Ludo AI API cost?**  
 A: Check the [Ludo AI pricing page](https://ludo.ai/pricing) for current pricing. API usage is typically credit-based.
-
-**Q: Can I use generated assets commercially?**  
-A: Review Ludo AI's terms of service regarding commercial use rights. Typically, assets generated with a paid account can be used commercially, but verify with Ludo AI.
 
 **Q: What Unity versions are supported?**  
 A: Unity 2019.4 or later. WebP image support requires Unity 2021.2+. The plugin uses EditorWindow features available in all modern Unity versions.
@@ -1087,7 +869,7 @@ This ensures:
 ### Official Links
 
 - **Ludo AI Website**: [https://ludo.ai](https://ludo.ai)
-- **API Documentation**: Check Ludo AI dashboard
+- **API & MCP Documentation**: [https://ludo.ai/api-mcp-integration](https://ludo.ai/api-mcp-integration)
 - **Pricing**: [https://ludo.ai/pricing](https://ludo.ai/pricing)
 
 ### Getting Help
@@ -1247,28 +1029,10 @@ auto, English, Afrikaans, Arabic, Bulgarian, Catalan, Chinese, Chinese (Yue), Cr
 
 ## License & Legal
 
-**Plugin License**: Check included LICENSE file or repository
-
 **Generated Assets**: Review Ludo AI's terms of service for usage rights
 
 **Disclaimer**: This plugin connects to Ludo AI's external API service. Functionality depends on API availability and your Ludo AI account status.
 
----
-
-## Changelog
-
-### Version 1.0 (February 2026)
-- Initial release
-- Sprite and image generation
-- Sprite animation to spritesheets
-- 3D model generation from images
-- Audio generation (sound effects, music, voice, speech)
-- Multiple voice preset options
-- Batch image generation (1-8 images)
-- WebP format support with fallbacks
-- Comprehensive error handling
-- API key management
-- Settings persistence
 
 ---
 
@@ -1278,5 +1042,4 @@ auto, English, Afrikaans, Arabic, Bulgarian, Catalan, Chinese, Chinese (Yue), Cr
 
 ---
 
-For more information, visit [Ludo AI](https://ludo.ai) or check the plugin's GitHub repository.
-
+For more information, visit [Ludo AI](https://ludo.ai)
