@@ -89,8 +89,8 @@ The **Ludo AI Plugin** is a Unity Editor extension that integrates AI-powered as
 
 1. Visit [https://ludo.ai](https://ludo.ai)
 2. Sign up or log in to your account
-3. Navigate to **Settings** → **API Keys**
-4. Generate a new API key or copy your existing one
+3. Navigate to **Top Right Corner Menu** → **API & MCP** → **Generate API Key**
+4. Generate a new API key
 
 ### Step 3: Configure the Plugin
 
