@@ -1,5 +1,6 @@
 # Ludo AI Plugin for Unity - Complete Guide
 
+![Ludo AI Plugin](https://ludo.ai/logo.png)
 
 > **AI-Powered Asset Generation for Unity**  
 > Generate sprites, images, 3D models, and audio directly in your Unity Editor using Ludo AI's powerful API.
@@ -63,8 +64,10 @@ The **Ludo AI Plugin** is a Unity Editor extension that integrates AI-powered as
 
 ### 3D Model Generation
 - Convert 2D images to 3D models
-- Adjustable face count (1,000-100,000)
-- Multiple texture sizes (1024x1024 to 4096x4096)
+- Rig models with Mixamo-friendly joint naming for Unity (BETA)
+- Animate rigged models from text prompts — multi-variant clips + MP4 previews (BETA)
+- Adjustable face count (1,000-200,000)
+- Texture sizes 1024x1024 or 2048x2048 (API-supported)
 - PBR or simple textures
 - Export as GLB format
 
@@ -89,8 +92,8 @@ The **Ludo AI Plugin** is a Unity Editor extension that integrates AI-powered as
 
 1. Visit [https://ludo.ai](https://ludo.ai)
 2. Sign up or log in to your account
-3. Navigate to **Top Right Corner Menu** → **API & MCP** → **Generate API Key**
-4. Generate a new API key
+3. Navigate to **Settings** → **API Keys**
+4. Generate a new API key or copy your existing one
 
 ### Step 3: Configure the Plugin
 
@@ -115,7 +118,7 @@ The **Ludo AI Plugin** is a Unity Editor extension that integrates AI-powered as
 **Menu Bar** → **Ludo AI** → **Ludo AI Plugin**
 
 The plugin window has four main tabs:
-- **3D Models**: Generate 3D models from images
+- **3D Models**: Create meshes from images, then **Rig** and **Animate** (BETA)
 - **Sprites & Images**: Generate and animate sprites
 - **Audio**: Create sound effects, music, and voice
 - **Settings**: Manage your API key
@@ -134,6 +137,15 @@ Let's generate a simple sprite:
 8. Wait for generation (10-60 seconds)
 9. Preview the sprite
 10. Click **Save Sprite** to save to `Assets/Sprites/`
+
+### Your First 3D Model
+
+1. Open the plugin → **3D Models** → **Create 3D**
+2. Click **Select from Project** and choose a **PNG with transparency** (RGBA)
+3. Set texture size to **1024** or **2048**
+4. Click **Create 3D Model** (can take several minutes)
+5. Preview snapshots, then **Download 3D Model** or **Use for Rigging**
+6. Optional (BETA): **Rig Model** → **Animate 3D** for skeletal animation clips
 
 ---
 
@@ -240,9 +252,11 @@ After saving:
 
 ## 3D Models
 
-Convert 2D concept art or sprites into 3D models.
+Convert 2D concept art or sprites into 3D models, then rig and animate them for use in Unity.
 
-### Workflow
+The **3D Models** tab has three subtabs: **Create 3D**, **Rig Model**, and **Animate 3D**. Flow works best as Create → Rig → Animate.
+
+### Create 3D from Image
 
 1. **Provide Image**: 
    - Enter image URL, or
@@ -252,26 +266,67 @@ Convert 2D concept art or sprites into 3D models.
 2. **Target Face Count**: 
    - **1,000-10,000**: Low poly, mobile-friendly
    - **10,000-50,000**: Medium detail
-   - **50,000-100,000**: High detail
+   - **50,000-200,000**: High detail
 
 3. **Texture Size**:
    - **1024x1024**: Low resolution, smaller file
-   - **2048x2048**: Medium resolution (recommended)
-   - **4096x4096**: High resolution, larger file
+   - **2048x2048**: Medium/high resolution (recommended; API max)
 
 4. **Texture Type**:
    - **PBR**: Physically Based Rendering (albedo, normal, roughness, metallic)
    - **Simple**: Basic color texture
    - **None**: No texture
 
-5. **High Detail Shape**: Enable for more geometric detail (slower)
+5. **Generate**: Click "Create 3D Model" (can take several minutes)
 
-6. **Generate**: Click "Create 3D Model"
+6. **Preview**: View snapshot renders from different angles
 
-7. **Preview**: View snapshot renders from different angles
+7. **Download** or continue:
+   - Click **Download 3D Model** to save a GLB under `Assets/3DModels/`
+   - Or click **Use for Rigging** to send the model into the Rig tab
 
-8. **Download**: Click "Download 3D Model" 
-   - Saves to `Assets/3DModels/` as GLB format
+**Note:** Texture size must be 1024 or 2048 — other values are rejected by the API.
+
+### Rig Model (BETA)
+
+Add a skeleton and skin weights so the mesh can be animated.
+
+> **BETA:** Rigging is an early preview. Results can vary by mesh shape, and quality is still being improved.
+
+1. Open the **Rig Model** subtab
+2. Provide a GLB via:
+   - **Use Created Model** (after Create), or
+   - **Select from Project** (`.glb`), or
+   - Paste a model URL / base64 GLB
+3. Choose **Rig Type**:
+   - `general` — any asset (default)
+   - `humanoid` — anime-style characters
+   - `game` — classic game-character rigs
+   - `humanoid_template` / `humanoid_template_hands` — pinned templates for two-armed, two-legged characters (needed for animation presets)
+4. Choose **Joint Naming** (default **`mixamo`** — works well with Unity Humanoid auto-mapping)
+5. Click **Rig Model** (can take several minutes)
+6. **Download Rigged Model**, or click **Use for Animation** to continue
+
+### Animate 3D (BETA)
+
+Generate text-driven skeletal animation candidates for a **rigged** GLB.
+
+> **BETA:** 3D animation is an early preview. Motion quality can be hit-or-miss (multiple candidates are returned so you can pick the best).
+
+1. Open the **Animate 3D** subtab
+2. Provide a rigged GLB via **Use Rigged Model**, project select, or URL
+3. Enter a **Motion Prompt** (e.g. `walking`, `swinging its axe`)
+4. Options:
+   - **Mode**: Rotation + Translation (default) or Rotation Only (retargeting)
+   - **Variants**: 1–8 candidates (default 4)
+   - **Loop Animation** / **Augment Prompt**
+5. Click **Animate 3D Model**
+6. For each candidate:
+   - **Open Preview** — opens the MP4 preview in your browser
+   - **Download Animation GLB** — saves that clip
+   - Or use **Download All Animation GLBs**
+
+**Important:** Animation results are **animation-only GLBs** (skeleton + clip, no mesh). Download the rigged mesh and the clips you want, then use them together in Unity (your GLB importer will bring in animation clips).
 
 **Importing GLB Models:**
 
@@ -279,7 +334,8 @@ Unity supports GLB import natively:
 1. Model appears in Project window after download
 2. Drag into Scene or Hierarchy
 3. Configure materials in Inspector if needed
-4. PBR textures work with Standard shader or URP/HDRP
+4. For Mixamo-named rigs, try setting the Avatar to Humanoid in the importer
+5. PBR textures work with Standard shader or URP/HDRP
 
 ---
 
@@ -485,7 +541,7 @@ Assets/
 
 **Texture Sizes:**
 - Mobile games: Use 1024x1024 or 2048x2048
-- Desktop games: 2048x2048 or 4096x4096
+- Desktop games: 2048x2048
 - Consider texture compression in Unity
 
 **3D Model Face Counts:**
@@ -573,6 +629,32 @@ Assets/
 - Check character limits (speech: 1000 chars, voice: 200 chars)
 - Ensure values are within valid ranges
 - Use supported formats (GLB for models, etc.)
+
+#### 3D Create: Schema / Image Errors
+
+**Problem:** Validation failed, or "Image must be in RGBA mode and have transparency"
+
+**Solutions:**
+- Use texture size **1024** or **2048** only (4096 is not supported)
+- Provide a **PNG with a transparent background** (RGBA). JPEG / opaque images are rejected
+- Prefer character/concept art cut out on transparency, not flattened onto black
+
+#### 3D Create: HTTP 0 / Unknown Error / Failed to transmit
+
+**Problem:** Upload fails before the API responds
+
+**Solutions:**
+- Retry Create — large images can take a moment to upload
+- Use a reasonably sized source image (the plugin auto-prepares RGBA PNGs)
+- Check firewall/VPN settings; confirm `https://api.ludo.ai` is reachable
+- Watch the Console for `body_bytes=` / HttpClient status lines
+
+#### 3D Rig / Animate (BETA)
+
+**Notes:**
+- Rig and Animate are **BETA** — quality can vary; animation returns multiple candidates
+- Animate clips are **animation-only GLBs** (no mesh) — download the rigged model separately
+- Default joint naming is **mixamo** for Unity Humanoid mapping
 
 ### Asset Import Issues
 
@@ -707,6 +789,9 @@ For complete technical details, endpoint specifications, and integration guides,
 
 **Q: How much does the Ludo AI API cost?**  
 A: Check the [Ludo AI pricing page](https://ludo.ai/pricing) for current pricing. API usage is typically credit-based.
+
+**Q: Can I use generated assets commercially?**  
+A: Review Ludo AI's terms of service regarding commercial use rights. Typically, assets generated with a paid account can be used commercially, but verify with Ludo AI.
 
 **Q: What Unity versions are supported?**  
 A: Unity 2019.4 or later. WebP image support requires Unity 2021.2+. The plugin uses EditorWindow features available in all modern Unity versions.
@@ -923,8 +1008,9 @@ This ensures:
 | Speech Text | 1,000 characters |
 | Sound Effect Duration | 0-10 seconds |
 | Batch Image Generation | 1-8 images |
-| 3D Model Face Count | 1,000-100,000 |
-| API Timeout | 10 minutes |
+| 3D Model Face Count | 1,000-200,000 |
+| 3D Texture Size | 1024 or 2048 |
+| 3D Create / Rig / Animate Timeout | Up to 60 minutes |
 
 ### Quality Settings
 
@@ -936,6 +1022,86 @@ This ensures:
 
 ---
 
+## Appendix: Complete Option Lists
+
+### Art Styles (20 Options)
+
+1. Any style
+2. Cartoonish
+3. Pixel Art (16-Bit)
+4. Low Poly
+5. Stylized 3D
+6. Flat Design
+7. Illustration
+8. Cel-Shaded
+9. Retro 2D
+10. Voxel Art
+11. Minimalist
+12. Hand-Painted
+13. Anime/Manga
+14. Vector Art
+15. Chibi
+16. Retro 3D
+17. Comic Book
+18. Silhouette
+19. Pixel Art (8-Bit)
+20. Photorealistic 3D
+
+### Perspectives (9 Options)
+
+1. Any perspective
+2. First-Person
+3. Third-Person
+4. Over-the-Shoulder
+5. Top-Down
+6. Isometric
+7. Side-Scroll
+8. Free Camera
+9. 2.5D
+
+### Genres (23 Options)
+
+Hypercasual, Casual, Core, Action, Adventure, Arcade, Board, Card, Casino, Education, Family, Fighting, Games for Kids, Music, Puzzle, Racing, Role Playing, Shooter, Simulation, Sports, Strategy, Trivia, Word
+
+### Voice Presets (14 Options)
+
+1. Serious woman
+2. Wise woman
+3. Calm woman
+4. Fast-paced woman
+5. Calm young girl
+6. Expressive teen girl
+7. Calm teen girl
+8. Sweet girl
+9. Patient man
+10. Determined man
+11. Young elegant man
+12. Teen boy
+13. Friendly man
+14. Deep voice man
+
+### Emotions (8 Options)
+
+Default, Happy, Sad, Angry, Fearful, Disgusted, Surprised, Neutral
+
+### Languages (40+ Supported)
+
+auto, English, Afrikaans, Arabic, Bulgarian, Catalan, Chinese, Chinese (Yue), Croatian, Czech, Danish, Filipino, Finnish, French, German, Greek, Hebrew, Hindi, Hungarian, Indonesian, Italian, Japanese, Korean, Malay, Norwegian, Nynorsk, Persian, Polish, Portuguese, Romanian, Russian, Slovak, Slovenian, Spanish, Swedish, Tamil, Thai, Turkish, Ukrainian, Vietnamese
+
+### Aspect Ratios (8 Options)
+
+| Label | Value |
+|-------|-------|
+| Default | default |
+| 1:1 | ar_1_1 |
+| 4:3 | ar_4_3 |
+| 16:9 | ar_16_9 |
+| 19:9 | ar_19_9 |
+| 3:4 | ar_3_4 |
+| 9:16 | ar_9_16 |
+| 9:19 | ar_9_19 |
+
+---
 
 ## Version Information
 
@@ -948,10 +1114,28 @@ This ensures:
 
 ## License & Legal
 
+**Plugin License**: Check included LICENSE file or repository
+
 **Generated Assets**: Review Ludo AI's terms of service for usage rights
 
 **Disclaimer**: This plugin connects to Ludo AI's external API service. Functionality depends on API availability and your Ludo AI account status.
 
+---
+
+## Changelog
+
+### Version 1.0 (February 2026)
+- Initial release
+- Sprite and image generation
+- Sprite animation to spritesheets
+- 3D model generation from images
+- Audio generation (sound effects, music, voice, speech)
+- Multiple voice preset options
+- Batch image generation (1-8 images)
+- WebP format support with fallbacks
+- Comprehensive error handling
+- API key management
+- Settings persistence
 
 ---
 
@@ -961,4 +1145,4 @@ This ensures:
 
 ---
 
-For more information, visit [Ludo AI](https://ludo.ai)
+For more information, visit [Ludo AI](https://ludo.ai) or check the plugin's GitHub repository.
