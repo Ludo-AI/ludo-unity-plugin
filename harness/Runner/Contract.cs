@@ -85,6 +85,7 @@ public class Contract
             CheckValue(name, prop, value, f.Errors);
         }
         CheckModelDuration(schema, body, f.Errors);
+        CheckMargins(schema, body, f.Errors);
         return f;
     }
 
@@ -151,6 +152,19 @@ public class Contract
         if (model == null || !map.TryGetValue(model, out var allowed)) return;
         double d = body["duration"]!.GetValue<double>();
         if (!allowed.Any(a => Math.Abs(a - d) < 1e-6)) errors.Add($"duration {d} is not offered for model '{model}' (allowed: {string.Join(", ", allowed)})");
+    }
+
+    // margin_ratio_mode rules (AnimateSpritePayload description, MediaGeneration.resolveMarginParams):
+    // "manual" needs a margin value; "auto"/"none" together with a value is a 400.
+    static void CheckMargins(JsonObject schema, JsonObject body, List<string> errors)
+    {
+        if (schema["properties"]?["margin_ratio_mode"] == null) return;
+        string mode = (string)body["margin_ratio_mode"];
+        bool hasValue = body["margin_ratio"] != null || body["margin_ratio_horizontal"] != null || body["margin_ratio_vertical"] != null;
+        if (mode == "manual" && !hasValue) errors.Add("margin_ratio_mode \"manual\" without a margin value");
+        if ((mode == "auto" || mode == "none") && hasValue) errors.Add($"margin_ratio_mode \"{mode}\" together with a margin value");
+        foreach (var k in new[] { "margin_ratio", "margin_ratio_horizontal", "margin_ratio_vertical" })
+            if (body[k] != null && (body[k]!.GetValue<double>() < 0 || body[k]!.GetValue<double>() > 1)) errors.Add($"'{k}' must be between 0 and 1");
     }
 
     // Models the public docs call legacy ("`blitz` (Blitz) - legacy since ...").

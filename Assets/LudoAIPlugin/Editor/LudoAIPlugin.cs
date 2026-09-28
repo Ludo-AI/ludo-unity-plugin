@@ -125,20 +125,20 @@ public class LudoAIPlugin : EditorWindow
     private string spritesheetInitialImageUrl = ""; // Manual URL input for initial image
     private bool spritesheetLoop = true;
     private bool spritesheetCrop = false;
-    private int spritesheetFrames = 8;
-    private int spritesheetFrameSize = 512;
-    private float spritesheetMarginRatio = 0.1f;
+    private int spritesheetFrames = 9;
+    private int spritesheetFrameSize = 256;
+    private float spritesheetMarginHorizontal = 0.1f;
+    private float spritesheetMarginVertical = 0.1f;
     private string spritesheetMarginMode = "auto"; // "auto", "manual", or "none"
-    private string spritesheetPixelFilter = "none";
+    private bool spritesheetGif = false;
     private GeneratedSpritesheet currentSpritesheet = null;
     private Texture2D spritesheetPreviewTexture = null;
     
     // Spritesheet export options
     private readonly int[] frameOptions = { 4, 9, 16, 25, 36, 49, 64 };
-    private readonly int[] frameSizeOptions = { 64, 128, 256, 0 }; // 0 = Max
-    private readonly string[] frameSizeLabels = { "64x64", "128x128", "256x256", "Max" };
-    private readonly string[] pixelArtFilterOptions = { "none", "small", "medium", "large" };
-    private readonly string[] pixelArtFilterLabels = { "No filter", "Small pixels", "Medium size pixels", "Large pixels" };
+    // 0 = maximum resolution, -1 = AI 1.5x upscale, -9 = match the input frame's size and position
+    private readonly int[] frameSizeOptions = { 32, 64, 96, 128, 192, 256, 384, 0, -1, -9 };
+    private readonly string[] frameSizeLabels = { "32x32", "64x64", "96x96", "128x128", "192x192", "256x256", "384x384", "Max", "AI upscale (1.5x)", "Match input frame" };
     private readonly string[] marginModeOptions = { "auto", "manual", "none" };
     private readonly string[] marginModeLabels = { "Auto", "Manual", "No margin" };
     
@@ -152,8 +152,6 @@ public class LudoAIPlugin : EditorWindow
     // Image Generation Variables
     private string imagePrompt = "";
     private string imageType = "screenshot";
-    private string imageGenre = "Casual";
-    private string imagePlatform = "Mobile";
     private string imageArtStyle = "Any style";
     private string imagePerspective = "Any perspective";
     private string imageAspectRatio = "default";
@@ -166,8 +164,8 @@ public class LudoAIPlugin : EditorWindow
     private Vector2 imagesScrollPosition;
 
     // Updated Spritesheet Animation Variables
-    private string spritesheetModel = "standard";
-    private float spritesheetDuration = 2.0f;
+    private string spritesheetModel = "hydra";
+    private float spritesheetDuration = 3.0f;
     private string spritesheetImageType = "sprite";
     private string spritesheetFinalImage = "";
     private bool spritesheetAugmentPrompt = true;
@@ -228,16 +226,30 @@ public class LudoAIPlugin : EditorWindow
     private Vector2 audioScrollPosition;
 
     // Dropdown options for new features
-    private readonly string[] imageTypeOptions = { "screenshot", "icon", "art", "asset", "sprite", "sprite-vfx", "ui_asset", "fixed_background", "texture", "3d", "generic" };
-    private readonly string[] genreOptions = { "Hypercasual", "Casual", "Core", "Action", "Adventure", "Arcade", "Board", "Card", "Casino", "Education", "Family", "Fighting", "Games for Kids", "Music", "Puzzle", "Racing", "Role Playing", "Shooter", "Simulation", "Sports", "Strategy", "Trivia", "Word" };
-    private readonly string[] platformOptions = { "Mobile", "Desktop", "Web" };
-    private readonly string[] artStyleOptions = { "Any style", "Cartoonish", "Pixel Art (16-Bit)", "Low Poly", "Stylized 3D", "Flat Design", "Illustration", "Cel-Shaded", "Retro 2D", "Voxel Art", "Minimalist", "Hand-Painted", "Anime/Manga", "Vector Art", "Chibi", "Retro 3D", "Comic Book", "Silhouette", "Pixel Art (8-Bit)", "Photorealistic 3D" };
-    private readonly string[] perspectiveOptions = { "Any perspective", "First-Person", "Third-Person", "Over-the-Shoulder", "Top-Down", "Isometric", "Side-Scroll", "Free Camera", "2.5D" };
+    private readonly string[] imageTypeOptions = { "screenshot", "generic", "art", "asset", "sprite", "sprite-vfx", "sprite-tiling-horizontal", "sprite-tiling-vertical", "icon", "item-icon", "logo", "ui_asset", "portrait", "card-art", "splash", "fixed_background", "side_scrolling_background", "vertical_scrolling_background", "parallax_layer", "texture", "tile", "3d" };
+    private readonly string[] artStyleOptions = { "Any style", "Cel-Shaded", "Inked Painterly", "Illustration", "Western Cartoon", "Anime/Manga", "Chibi", "8-Bit", "16-Bit", "32-Bit", "Hi-Bit", "Retro 2D", "Hand-Painted", "Digital Painting", "Comic Book", "Block Print", "Sketch", "Watercolor", "Stylized 3D", "Pixar Style", "Low Poly", "Photorealistic 3D", "Voxel Art", "Retro 3D", "Flat Design", "Minimalist", "Silhouette", "Noir", "Neon", "Glitch Art", "Claymation", "Paper Craft", "Textile" };
+    private readonly string[] perspectiveOptions = { "Any perspective", "Side-Scroll", "Isometric", "High Angle", "Top-Down", "2.5D", "First-Person", "Third-Person", "Over-the-Shoulder", "Free Camera" };
     private readonly string[] aspectRatioOptions = { "default", "ar_1_1", "ar_4_3", "ar_16_9", "ar_19_9", "ar_3_4", "ar_9_16", "ar_9_19" };
     private readonly string[] aspectRatioLabels = { "Default", "1:1", "4:3", "16:9", "19:9", "3:4", "9:16", "9:19" };
     
-    private readonly string[] spritesheetModelOptions = { "standard", "new" };
-    private readonly string[] spritesheetImageTypeOptions = { "sprite", "sprite-vfx", "ui_asset" };
+    // Current sprite animation models; the API still accepts legacy ones (blitz, eagle, ...)
+    // but they are scheduled for removal.
+    private readonly string[] spritesheetModelOptions = { "hydra", "forge", "forge-pixel" };
+    private readonly string[] spritesheetModelLabels = { "Hydra", "Forge", "Forge Pixel" };
+    private readonly string[] spritesheetModelHints =
+    {
+        "Most capable all-around model, also generates a sound effect. 3 credits/s.",
+        "Cost-effective for basic animations and simple sprites; may need a few tries. 1.5 credits/s.",
+        "Best for low-res pixel art animations. 1.5 credits/s."
+    };
+    // Durations (seconds) each model accepts.
+    private readonly Dictionary<string, float[]> spritesheetModelDurations = new Dictionary<string, float[]>
+    {
+        ["hydra"] = new[] { 3f, 3.5f, 4f, 4.5f, 5f },
+        ["forge"] = new[] { 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f, 4.5f, 5f },
+        ["forge-pixel"] = new[] { 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f, 4.5f, 5f }
+    };
+    private readonly string[] spritesheetImageTypeOptions = { "sprite", "sprite-vfx", "item-icon", "ui_asset", "logo", "sprite-tiling-horizontal", "sprite-tiling-vertical", "parallax_layer", "tile", "texture", "portrait", "card-art" };
     
     private readonly int[] textureSizeOptions = { 1024, 2048 };
     private readonly string[] textureTypeOptions = { "pbr", "simple", "none" };
@@ -249,7 +261,7 @@ public class LudoAIPlugin : EditorWindow
     private readonly string[] voiceTypeOptions = { "human", "non-human" };
     private readonly string[] voicePresetOptions = { "Serious woman", "Wise woman", "Calm woman", "Fast-paced woman", "Calm young girl", "Expressive teen girl", "Calm teen girl", "Sweet girl", "Patient man", "Determined man", "Young elegant man", "Teen boy", "Friendly man", "Deep voice man" };
     private readonly string[] emotionOptions = { "Default", "Happy", "Sad", "Angry", "Fearful", "Disgusted", "Surprised", "Neutral" };
-    private readonly string[] languageOptions = { "auto", "English", "Afrikaans", "Arabic", "Bulgarian", "Catalan", "Chinese", "Chinese,Yue", "Croatian", "Czech", "Danish", "English", "Filipino", "Finnish", "French", "German", "Greek", "Hebrew", "Hindi", "Hungarian", "Indonesian", "Italian", "Japanese", "Korean", "Malay", "Norwegian", "Nynorsk", "Persian", "Polish", "Portuguese", "Romanian", "Russian", "Slovak", "Slovenian", "Spanish", "Swedish", "Tamil", "Thai", "Turkish", "Ukrainian", "Vietnamese" };
+    private readonly string[] languageOptions = { "auto", "English", "Afrikaans", "Arabic", "Bulgarian", "Catalan", "Chinese", "Chinese,Yue", "Croatian", "Czech", "Danish", "Filipino", "Finnish", "French", "German", "Greek", "Hebrew", "Hindi", "Hungarian", "Indonesian", "Italian", "Japanese", "Korean", "Malay", "Norwegian", "Nynorsk", "Persian", "Polish", "Portuguese", "Romanian", "Russian", "Slovak", "Slovenian", "Spanish", "Swedish", "Tamil", "Thai", "Turkish", "Ukrainian", "Vietnamese" };
 
     // ============================
     // ======= INIT & GUI =========
@@ -2639,16 +2651,6 @@ public class LudoAIPlugin : EditorWindow
         imageTypeIndex = EditorGUILayout.Popup("Image Type:", imageTypeIndex, imageTypeOptions);
         imageType = imageTypeOptions[imageTypeIndex];
 
-        // Genre dropdown
-        int genreIndex = System.Array.IndexOf(genreOptions, imageGenre);
-        genreIndex = EditorGUILayout.Popup("Genre:", genreIndex, genreOptions);
-        imageGenre = genreOptions[genreIndex];
-
-        // Platform dropdown
-        int platformIndex = System.Array.IndexOf(platformOptions, imagePlatform);
-        platformIndex = EditorGUILayout.Popup("Platform:", platformIndex, platformOptions);
-        imagePlatform = platformOptions[platformIndex];
-
         // Art Style dropdown
         int artStyleIndex = System.Array.IndexOf(artStyleOptions, imageArtStyle);
         artStyleIndex = EditorGUILayout.Popup("Art Style:", artStyleIndex, artStyleOptions);
@@ -2815,7 +2817,7 @@ public class LudoAIPlugin : EditorWindow
         // Frame Size dropdown with predefined options
         GUILayout.Label("Frame Size:");
         int currentFrameSizeIndex = Array.IndexOf(frameSizeOptions, spritesheetFrameSize);
-        if (currentFrameSizeIndex < 0) currentFrameSizeIndex = 2; // Default to 256x256
+        if (currentFrameSizeIndex < 0) currentFrameSizeIndex = Array.IndexOf(frameSizeOptions, 256);
         currentFrameSizeIndex = EditorGUILayout.Popup(currentFrameSizeIndex, frameSizeLabels);
         spritesheetFrameSize = frameSizeOptions[currentFrameSizeIndex];
 
@@ -2828,48 +2830,32 @@ public class LudoAIPlugin : EditorWindow
         marginModeIndex = EditorGUILayout.Popup(marginModeIndex, marginModeLabels);
         spritesheetMarginMode = marginModeOptions[marginModeIndex];
 
-        // Show margin ratio slider only if manual mode is selected
+        // Margin sliders (as a ratio of the sprite size) only in manual mode
         if (spritesheetMarginMode == "manual")
         {
-            spritesheetMarginRatio = EditorGUILayout.Slider("Margin Ratio", spritesheetMarginRatio, 0f, 1f);
+            spritesheetMarginHorizontal = EditorGUILayout.Slider("Horizontal Margin", spritesheetMarginHorizontal, 0f, 1f);
+            spritesheetMarginVertical = EditorGUILayout.Slider("Vertical Margin", spritesheetMarginVertical, 0f, 1f);
         }
-
-        GUILayout.Space(5);
-
-        // Pixel Art Filter dropdown with predefined options
-        GUILayout.Label("Pixel Art Filter:");
-        int filterIndex = Array.IndexOf(pixelArtFilterOptions, spritesheetPixelFilter);
-        if (filterIndex < 0) filterIndex = 0; // Default to none
-        filterIndex = EditorGUILayout.Popup(filterIndex, pixelArtFilterLabels);
-        spritesheetPixelFilter = pixelArtFilterOptions[filterIndex];
 
         GUILayout.Space(5);
 
         // Model selection
         GUILayout.Label("Animation Model:");
         int modelIndex = Array.IndexOf(spritesheetModelOptions, spritesheetModel);
-        if (modelIndex < 0) modelIndex = 0; // Default to standard
-        modelIndex = EditorGUILayout.Popup(modelIndex, spritesheetModelOptions);
+        if (modelIndex < 0) modelIndex = 0; // Default to hydra
+        modelIndex = EditorGUILayout.Popup(modelIndex, spritesheetModelLabels);
         spritesheetModel = spritesheetModelOptions[modelIndex];
+        EditorGUILayout.LabelField(spritesheetModelHints[modelIndex], EditorStyles.helpBox);
 
         GUILayout.Space(5);
 
-        // Duration based on model
+        // Duration: each model offers its own set
         GUILayout.Label("Duration (seconds):");
-        if (spritesheetModel == "standard")
-        {
-            float[] standardDurations = { 1.2f, 1.5f, 2.0f, 2.5f, 3.0f };
-            string[] standardLabels = { "1.2s", "1.5s", "2.0s", "2.5s", "3.0s" };
-            int durationIndex = Array.IndexOf(standardDurations, spritesheetDuration);
-            if (durationIndex < 0) durationIndex = 2; // Default to 2.0s
-            durationIndex = EditorGUILayout.Popup(durationIndex, standardLabels);
-            spritesheetDuration = standardDurations[durationIndex];
-        }
-        else // new model
-        {
-            spritesheetDuration = 4.0f;
-            EditorGUILayout.LabelField("4.0s (fixed for 'new' model)", EditorStyles.helpBox);
-        }
+        float[] durations = spritesheetModelDurations[spritesheetModel];
+        int durationIndex = Array.IndexOf(durations, spritesheetDuration);
+        if (durationIndex < 0) durationIndex = 0;
+        durationIndex = EditorGUILayout.Popup(durationIndex, Array.ConvertAll(durations, d => d.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "s"));
+        spritesheetDuration = durations[durationIndex];
 
         GUILayout.Space(5);
 
@@ -2879,6 +2865,10 @@ public class LudoAIPlugin : EditorWindow
         if (imageTypeIndex < 0) imageTypeIndex = 0; // Default to sprite
         imageTypeIndex = EditorGUILayout.Popup(imageTypeIndex, spritesheetImageTypeOptions);
         spritesheetImageType = spritesheetImageTypeOptions[imageTypeIndex];
+
+        GUILayout.Space(5);
+
+        spritesheetGif = EditorGUILayout.Toggle("Also create a GIF", spritesheetGif);
 
         GUILayout.Space(10);
 
@@ -3344,25 +3334,17 @@ public class LudoAIPlugin : EditorWindow
             ["augment_prompt"] = spritesheetAugmentPrompt
         };
 
-        // Add margin_ratio based on mode
+        // Margins: per-axis values only in manual mode ("auto"/"none" reject a value)
+        requestData["margin_ratio_mode"] = spritesheetMarginMode;
         if (spritesheetMarginMode == "manual")
         {
-            requestData["margin_ratio"] = spritesheetMarginRatio;
-            requestData["margin_ratio_mode"] = "manual";
-        }
-        else if (spritesheetMarginMode == "none")
-        {
-            requestData["margin_ratio_mode"] = "none";
-        }
-        else // auto
-        {
-            requestData["margin_ratio_mode"] = "auto";
+            requestData["margin_ratio_horizontal"] = spritesheetMarginHorizontal;
+            requestData["margin_ratio_vertical"] = spritesheetMarginVertical;
         }
 
-        // Add optional parameters
-        if (spritesheetPixelFilter != "none")
+        if (spritesheetGif)
         {
-            requestData["pixel_art_filter"] = spritesheetPixelFilter;
+            requestData["gif"] = true;
         }
 
         if (!string.IsNullOrEmpty(spritesheetFinalImage))
@@ -3491,13 +3473,7 @@ public class LudoAIPlugin : EditorWindow
         };
 
         // Add optional parameters
-        if (!string.IsNullOrEmpty(imageGenre))
-            requestData["genre"] = imageGenre;
-
-        if (!string.IsNullOrEmpty(imagePlatform))
-            requestData["platform"] = imagePlatform;
-
-        if (!string.IsNullOrEmpty(imageArtStyle) && imageArtStyle != "Any style")
+        if (!string.IsNullOrEmpty(imageArtStyle)&& imageArtStyle != "Any style")
             requestData["art_style"] = imageArtStyle;
 
         if (!string.IsNullOrEmpty(imagePerspective) && imagePerspective != "Any perspective")

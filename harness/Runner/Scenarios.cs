@@ -160,6 +160,28 @@ public static class Scenarios
             if (ButtonShown(p, label)) ClickSave(c, p, label, "gif");
     }
 
+    static void AnimateMargins(Ctx c)
+    {
+        var p = c.NewPlugin(new FakeLudoApi.Behavior { PollsUntilDone = 1, PollAfterMs = 1 });
+        c.Require(p.Has("spritesheetMarginHorizontal"), "no per-axis margins (field spritesheetMarginHorizontal)");
+        Tab(p, "Sprites", "currentSpriteTab", "ImageToSpritesheet");
+        p.Set("spritesheetInitialImageUrl", FakeFile(c, "input.webp"));
+        foreach (var mode in new[] { "auto", "none", "manual" })
+        {
+            p.Set("spritesheetMarginMode", mode);
+            p.Set("spritesheetMarginHorizontal", 0.25f);
+            p.Set("spritesheetMarginVertical", 0.05f);
+            p.Click("Animate Sprite");
+            c.Require(p.RunUntilIdle(20), $"margin mode {mode} never finished");
+            var body = LastBody(c, "/assets/sprite/animate");
+            c.Check((string)body["margin_ratio_mode"] == mode, $"mode {mode}: sent margin_ratio_mode {body["margin_ratio_mode"]}");
+            if (mode == "manual")
+                c.Check(body["margin_ratio_horizontal"]?.GetValue<double>() is > 0.24 and < 0.26 && body["margin_ratio_vertical"]?.GetValue<double>() is > 0.04 and < 0.06,
+                    $"manual margins not sent per axis: {body.ToJsonString()}");
+        }
+        c.CheckClean(p, "/assets/sprite/animate");
+    }
+
     static bool ButtonShown(PluginDriver p, string label) { p.Gui(); return Harness.Buttons.Contains(label); }
 
     static void Model3DChain(Ctx c)
@@ -457,6 +479,7 @@ public static class Scenarios
         new("ui", "every screen renders", EveryScreenRenders),
         new("ui", "dropdowns only offer values the API accepts", DropdownsMatchContract),
         new("ui", "animate: every model x duration is accepted", AnimateModelDurationSweep),
+        new("ui", "animate: margin modes (auto / none / manual per-axis)", AnimateMargins),
         new("ui", "image: every style/perspective/type/ratio is accepted", ImageOptionSweep),
     };
 }
