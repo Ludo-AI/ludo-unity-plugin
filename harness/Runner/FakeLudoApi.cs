@@ -46,6 +46,7 @@ public class FakeLudoApi : IDisposable
         public long CreatedAt;
         public double LastAnswerAt;
         public int LastPollAfterMs;
+        public bool LastWas429;
     }
 
     static readonly string[] GenerationPaths =
@@ -228,8 +229,11 @@ public class FakeLudoApi : IDisposable
         var q = System.Web.HttpUtility.ParseQueryString(ctx.Request.Url!.Query);
         int.TryParse(q["wait"], out wait);
         if (wait > 60) lock (Violations) Violations.Add($"poll with wait={wait} (max 60)");
-        if (job.LastAnswerAt > 0 && wait == 0 && Now - job.LastAnswerAt < job.LastPollAfterMs * 0.9)
-            lock (Violations) Violations.Add($"polled {id} {Now - job.LastAnswerAt:F0}ms after the last answer; poll_after_ms was {job.LastPollAfterMs}");
+        // A client must wait poll_after_ms between polls (long-polling makes that cheap, not
+        // optional), and after a 429 it must wait Retry-After whatever it sends.
+        if (job.LastAnswerAt > 0 && Now - job.LastAnswerAt < job.LastPollAfterMs * 0.9)
+            lock (Violations) Violations.Add($"polled {id} {Now - job.LastAnswerAt:F0}ms after the last answer; {(job.LastWas429 ? "Retry-After" : "poll_after_ms")} was {job.LastPollAfterMs}ms");
+        job.LastWas429 = false;
 
         if (B.CloseSocketOnFirstPoll && !socketDropped)
         {
@@ -244,6 +248,7 @@ public class FakeLudoApi : IDisposable
             await Json(ctx, rec, 429, new JsonObject { ["message"] = "Too many requests, please try again later." });
             job.LastAnswerAt = Now;
             job.LastPollAfterMs = 1000;
+            job.LastWas429 = true;
             return;
         }
 

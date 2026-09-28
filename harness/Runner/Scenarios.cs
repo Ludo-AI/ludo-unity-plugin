@@ -308,6 +308,19 @@ public static class Scenarios
         c.CheckClean(p);
     }
 
+    // poll_after_ms longer than the plugin's own tick, so ignoring it shows.
+    static void HonoursPollAfter(Ctx c)
+    {
+        var p = c.NewPlugin(new FakeLudoApi.Behavior { PollAfterMs = 800, PollsUntilDone = 3 });
+        Tab(p, "Audio", "currentAudioTab", "SoundEffect");
+        p.Set("soundEffectDescription", "footsteps on gravel");
+        p.Click("Generate Sound Effect");
+        c.Require(p.RunUntilIdle(30), "never finished: " + p.Status);
+        c.Check(c.Api.Polls().Count == 3, $"expected 3 polls, got {c.Api.Polls().Count}");
+        c.Check(c.Api.Polls().All(r => r.Query.Contains("wait=")), "status polls don't long-poll (?wait=)");
+        c.CheckClean(p);
+    }
+
     static void PollConnectionDrop(Ctx c)
     {
         var p = c.NewPlugin(new FakeLudoApi.Behavior { CloseSocketOnFirstPoll = true, PollsUntilDone = 2 });
@@ -492,6 +505,7 @@ public static class Scenarios
         new("failure", "bad API key: reason shown", BadApiKey),
         new("failure", "400 validation: reason shown", ValidationError),
         new("failure", "poll 429: honours Retry-After, recovers", PollRateLimited),
+        new("failure", "polling: long-polls and waits poll_after_ms", HonoursPollAfter),
         new("failure", "poll connection drop: recovers", PollConnectionDrop),
         new("failure", "job never finishes: progress, then timeout", LongJobShowsProgress),
         new("ui", "every screen renders", EveryScreenRenders),
