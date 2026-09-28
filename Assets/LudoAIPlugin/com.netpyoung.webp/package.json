@@ -1,0 +1,24 @@
+{
+  "name": "com.netpyoung.webp",
+  "displayName": "Unity.WebP",
+  "version": "0.3.21",
+  "unity": "2018.4",
+  "description": "webp made easy for Unity3d.",
+  "keywords": [
+    "webp",
+    "unity.webp"
+  ],
+  "license": "MIT",
+  "category": "image",
+  "samples": [
+    {
+      "displayName": "backward-compatibility-2022-ios",
+      "description": "backward compatibility 2022 ios.",
+      "path": "Samples~/backward-compatibility-2022-ios"
+    }
+  ],
+  "publishConfig": {
+    "registry": "https://package.openupm.com"
+  },
+  "_fingerprint": "ee898d3d43c5bbcfd7690a8a3e97dfaec97726f6"
+}

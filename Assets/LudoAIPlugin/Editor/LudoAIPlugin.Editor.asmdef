@@ -1,0 +1,20 @@
+{
+    "name": "LudoAIPlugin.Editor",
+    "references": [
+        "UnityEditor",
+        "Unity.Newtonsoft.Json",
+        "Unity.EditorCoroutines.Editor",
+        "GUID:9e04c6f1d83f64c85a18cbf2fcccc31c"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
