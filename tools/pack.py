@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build a .unitypackage from Assets/, starting from a released package.
 
-    tools/pack.py "LudoAI_Plugin 1.0.2.unitypackage" "LudoAI_Plugin 1.0.3.unitypackage"
+    tools/pack.py LudoAI_Plugin_1.0.3.unitypackage LudoAI_Plugin_1.0.4.unitypackage
 
 A .unitypackage is a gzipped tar of <guid>/{asset, asset.meta, pathname}. The base
 package supplies every entry and its GUID (including files inside .xcframework

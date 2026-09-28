@@ -44,7 +44,9 @@ decoder (the stubs only recognise the WebP header). Those keep the patterns
 
 ## Packaging
 
-    python3 tools/pack.py "LudoAI_Plugin 1.0.2.unitypackage" "LudoAI_Plugin 1.0.3.unitypackage"
+    python3 tools/pack.py LudoAI_Plugin_1.0.3.unitypackage LudoAI_Plugin_1.0.4.unitypackage
 
-Starts from the released package (keeping every GUID), swaps in what changed
-under `Assets/`, and verifies the result byte for byte.
+Starts from the current package in the repo root (keeping every GUID), swaps in
+what changed under `Assets/`, and verifies the result byte for byte. Then
+`git rm` the old package, tag `vX.Y.Z` and attach the new one to a GitHub Release.
+Older packages live in git history and in the Releases.

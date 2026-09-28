@@ -96,9 +96,11 @@ The **Ludo AI Plugin** is a Unity Editor extension that integrates AI-powered as
 
 ### Step 1: Install the Plugin
 
-1. Download the plugin package or clone the repository
-2. Copy the `LudoAIPlugin` folder to your Unity project's `Assets/` directory
-3. Unity will automatically import the plugin and its dependencies
+1. Download **`LudoAI_Plugin_1.0.3.unitypackage`** from the [latest release](https://github.com/Ludo-AI/ludo-unity-plugin/releases/latest)
+2. In Unity: **Assets** → **Import Package** → **Custom Package...**, pick the file, and click **Import** (or double-click the file with your project open)
+3. Everything lands in `Assets/LudoAIPlugin/`, dependencies included (Editor Coroutines, Newtonsoft.Json, WebP decoder)
+
+**Updating from an older version:** import the new package over the old one; Unity replaces the changed files.
 
 ### Step 2: Get Your API Key
 
