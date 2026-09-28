@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Stand-ins for the Unity API surface LudoAIPlugin.cs touches. netstandard2.0 +
+       C# 7.3 so everything compiled against it is held to what Unity 2019.4 accepts. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <AssemblyName>UnityStubs</AssemblyName>
+    <Nullable>disable</Nullable>
+    <NoWarn>CS0067;CS0414;CS1998</NoWarn>
+  </PropertyGroup>
+</Project>

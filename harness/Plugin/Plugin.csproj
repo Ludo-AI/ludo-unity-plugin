@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Compiles the shipped plugin source, unmodified, against the Unity stubs.
+       Same constraints as Unity 2019.4: .NET Standard 2.0 API surface, C# 7.3.
+       Override the file under test with -p:PluginFile=<path>. -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <AssemblyName>LudoAIPlugin.Editor</AssemblyName>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <NoWarn>CS0414;CS0169;CS0649;CS0162;CS0219;CS0168</NoWarn>
+    <PluginRoot>$(MSBuildThisFileDirectory)../../Assets/LudoAIPlugin/</PluginRoot>
+    <PluginFile Condition="'$(PluginFile)' == ''">$(PluginRoot)Editor/LudoAIPlugin.cs</PluginFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(PluginFile)" Link="LudoAIPlugin.cs" />
+    <Compile Include="$(PluginRoot)com.unity.editorcoroutines@1.0.0/Editor/*.cs" LinkBase="EditorCoroutines" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../UnityStubs/UnityStubs.csproj" />
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>$(PluginRoot)com.unity.nuget.newtonsoft-json@3.2.1/Runtime/Newtonsoft.Json.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>
