@@ -127,6 +127,7 @@ public static class Scenarios
         foreach (var img in (IEnumerable)images)
             c.Check(!string.IsNullOrEmpty((string)PluginDriver.Prop(img, "Url")), "image without url");
         if (c.Live) LiveState.ImageUrl = (string)PluginDriver.Prop(((IList)images)[0], "Url");
+        if (c.Live) LiveState.ImageUrl2 = (string)PluginDriver.Prop(((IList)images)[1], "Url");
         c.Check(PluginDriver.Count(p.Get("imagePreviewCache")) == 2, $"previews loaded: {PluginDriver.Count(p.Get("imagePreviewCache"))}/2");
         c.CheckClean(p, "/assets/image");
         ClickSave(c, p, "Save to File", "image");
@@ -261,6 +262,25 @@ public static class Scenarios
         p.Click("Clear");
         c.Check(string.IsNullOrEmpty(p.Get<string>("model3DBackImageUrl")), "'Clear' left the back view set");
         c.CheckClean(p, "/assets/3d-model");
+    }
+
+    // Live only: the API accepts back_image and the job completes. (Whether the model's back
+    // follows the image needs eyes on the GLB.)
+    static void Model3DBackViewLive(Ctx c)
+    {
+        c.Require(c.Live, "live-only scenario");
+        c.Require(LiveState.ImageUrl != null && LiveState.ImageUrl2 != null, "run the images scenario first");
+        var p = c.NewPlugin();
+        Tab(p, "Models", "currentModelTab", "Create");
+        p.Set("model3DImageUrl", LiveState.ImageUrl);
+        p.Set("model3DBackImageUrl", LiveState.ImageUrl2);
+        p.Click("Create 3D Model");
+        c.Require(p.RunUntilIdle(1200), "3D creation with back view never finished: " + p.Status);
+        var model = p.Get("current3DModel");
+        c.Require(model != null && !string.IsNullOrEmpty((string)PluginDriver.Prop(model, "ModelUrl")), $"no model; status: {p.Status}; dialogs: {string.Join(" / ", p.Dialogs)}");
+        c.CheckClean(p);
+        ClickSave(c, p, "Download 3D Model", "glb");
+        c.Note("model url: " + PluginDriver.Prop(model, "ModelUrl"));
     }
 
     static void Audio(Ctx c, string sub, string path, Action<PluginDriver> fill, string generate, string resultField, string save)
@@ -562,6 +582,7 @@ public static class Scenarios
     public static class LiveState
     {
         public static string ImageUrl;
+        public static string ImageUrl2;
     }
 
     public static List<Scenario> All() => new()
@@ -570,6 +591,7 @@ public static class Scenarios
         new("generate", "sprite animation: animate, preview, save", AnimateSprite, LiveToo: true),
         new("generate", "3D: create -> rig -> animate, with downloads", Model3DChain, LiveToo: true),
         new("generate", "3D: optional back view (URL, from project, clear)", Model3DBackView),
+        new("live", "3D: back view accepted by the live API", Model3DBackViewLive, LiveToo: true),
         new("generate", "audio: sound effect", c => Audio(c, "SoundEffect", "/audio/sound-effect", p => { p.Set("soundEffectDescription", "sword clash"); p.Set("soundEffectDuration", 2f); }, "Generate Sound Effect", "currentSoundEffect", "Save Sound Effect"), LiveToo: true),
         new("generate", "audio: music", c => Audio(c, "Music", "/audio/music", p => p.Set("musicDescription", "calm village theme"), "Generate Music", "currentMusic", "Save Music"), LiveToo: true),
         new("generate", "audio: voice", c => Audio(c, "Voice", "/audio/voice", p => { p.Set("voiceDescription", "old wizard"); p.Set("voiceText", "You shall not pass"); }, "Generate Voice", "currentVoice", "Save Voice"), LiveToo: true),

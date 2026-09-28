@@ -3,7 +3,7 @@
 #
 #   harness/run.sh                     working tree, fake API
 #   harness/run.sh --ref v1.0.2        any git revision of LudoAIPlugin.cs
-#   harness/run.sh --filter audio      only matching scenarios
+#   harness/run.sh --filter "audio|3D"  only matching scenarios (| = or)
 #   LUDO_API_KEY=... harness/run.sh --live   real API (dev by default; spends credits)
 set -e
 here="$(cd "$(dirname "$0")" && pwd)"

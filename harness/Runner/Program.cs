@@ -49,7 +49,8 @@ public static class Program
         foreach (var s in Scenarios.All())
         {
             if (live && !s.LiveToo) continue;
-            if (filter != null && !($"{s.Group} {s.Name}").Contains(filter, StringComparison.OrdinalIgnoreCase)) continue;
+            if (!live && s.Group == "live") continue;
+            if (filter != null && !filter.Split('|').Any(f => ($"{s.Group} {s.Name}").Contains(f, StringComparison.OrdinalIgnoreCase))) continue;
             var ctx = new Ctx { Api = api, Contract = contract, ApiUrl = apiUrl, ApiKey = apiKey, OutDir = Path.Combine(outRoot, Slug(s.Name)) };
             var sw = Stopwatch.StartNew();
             try { s.Run(ctx); }
