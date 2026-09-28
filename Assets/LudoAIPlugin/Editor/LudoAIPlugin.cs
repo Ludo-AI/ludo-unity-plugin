@@ -3324,13 +3324,9 @@ public class LudoAIPlugin : EditorWindow
 
     private IEnumerator ImageToSpritesheet()
     {
-        // Updated to use /assets/sprite/animate endpoint
-        string endpoint = "/assets/sprite/animate";
-        string fullUrl = apiUrl + endpoint;
-
         // Use the manually entered URL or fall back to selected sprite
-        string initialImageUrl = !string.IsNullOrEmpty(spritesheetInitialImageUrl) 
-            ? spritesheetInitialImageUrl 
+        string initialImageUrl = !string.IsNullOrEmpty(spritesheetInitialImageUrl)
+            ? spritesheetInitialImageUrl
             : (selectedSprite != null ? selectedSprite.Image.Url : "");
 
         // Build the request payload according to the new API schema
@@ -3347,7 +3343,7 @@ public class LudoAIPlugin : EditorWindow
             ["image_type"] = spritesheetImageType,
             ["augment_prompt"] = spritesheetAugmentPrompt
         };
-        
+
         // Add margin_ratio based on mode
         if (spritesheetMarginMode == "manual")
         {
@@ -3362,7 +3358,7 @@ public class LudoAIPlugin : EditorWindow
         {
             requestData["margin_ratio_mode"] = "auto";
         }
-        
+
         // Add optional parameters
         if (spritesheetPixelFilter != "none")
         {
@@ -3374,74 +3370,54 @@ public class LudoAIPlugin : EditorWindow
             requestData["final_image"] = spritesheetFinalImage;
         }
 
-        // Serialize without null values
-        var settings = new JsonSerializerSettings
+        var job = new EditorHttpResult();
+        yield return RunApiJob("/assets/sprite/animate", requestData, "Animating sprite", job);
+
+        if (!job.Success)
         {
-            NullValueHandling = NullValueHandling.Ignore
-        };
-        string jsonData = JsonConvert.SerializeObject(requestData, settings);
-        Debug.Log($"[LudoAIPlugin] Spritesheet animation request payload: {jsonData}");
-        Debug.Log($"[LudoAIPlugin] Full URL: {fullUrl}");
-        byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonData);
-
-        UnityWebRequest www = new UnityWebRequest(fullUrl, "POST");
-        www.SetRequestHeader("x-ludo-tool", "unity");
-        www.SetRequestHeader("Authorization", "ApiKey " + apiKey);
-        www.SetRequestHeader("Content-Type", "application/json");
-        www.uploadHandler = new UploadHandlerRaw(bodyRaw);
-        www.downloadHandler = new DownloadHandlerBuffer();
-        www.timeout = 600; // 10 minutes
-
-        yield return www.SendWebRequest();
-
-        if (www.result != UnityWebRequest.Result.Success)
-        {
-            statusMessage = $"Error animating sprite: {www.error}";
+            statusMessage = FormatEditorHttpError("animating sprite", job);
             Debug.LogError($"[LudoAIPlugin] {statusMessage}");
-            if (www.downloadHandler != null && !string.IsNullOrEmpty(www.downloadHandler.text))
-            {
-                Debug.LogError($"[LudoAIPlugin] Response details: {www.downloadHandler.text}");
-            }
             EditorUtility.DisplayDialog("Sprite Animation Error", statusMessage, "OK");
+            isProcessing = false;
+            yield break;
         }
-        else
+
+        try
         {
-            try
+            var animatedResponse = JsonConvert.DeserializeObject<AnimatedSpriteResponse>(job.Body);
+
+            if (animatedResponse != null && !string.IsNullOrEmpty(animatedResponse.SpritesheetUrl))
             {
-                string json = www.downloadHandler.text;
-                var animatedResponse = JsonConvert.DeserializeObject<AnimatedSpriteResponse>(json);
+                statusMessage = "Sprite animated successfully!";
+                Debug.Log($"[LudoAIPlugin] {statusMessage}");
 
-                if (animatedResponse != null)
+                // For backwards compatibility, also populate currentSpritesheet if needed
+                currentSpritesheet = new GeneratedSpritesheet
                 {
-                    statusMessage = "Sprite animated successfully!";
-                    Debug.Log($"[LudoAIPlugin] {statusMessage}");
+                    SpriteSheetB64 = animatedResponse.SpritesheetUrl,
+                    Video = new VideoInfo { Url = animatedResponse.VideoUrl },
+                    GifB64 = animatedResponse.GifUrl,
+                    NumFrames = animatedResponse.NumFrames,
+                    TargetFrameSize = spritesheetFrameSize,
+                    Loop = spritesheetLoop,
+                    Duration = animatedResponse.Duration
+                };
 
-                    // For backwards compatibility, also populate currentSpritesheet if needed
-                    currentSpritesheet = new GeneratedSpritesheet
-                    {
-                        SpriteSheetB64 = animatedResponse.SpritesheetUrl,
-                        Video = new VideoInfo { Url = animatedResponse.VideoUrl },
-                        GifB64 = animatedResponse.GifUrl
-                    };
-
-                    // Load preview texture
-                    if (!string.IsNullOrEmpty(animatedResponse.SpritesheetUrl))
-                    {
-                        EditorCoroutineUtility.StartCoroutineOwnerless(LoadSpritesheetPreview(animatedResponse.SpritesheetUrl));
-                    }
-                }
-                else
-                {
-                    statusMessage = "Failed to parse sprite animation response.";
-                    Debug.LogWarning($"[LudoAIPlugin] {statusMessage}");
-                }
+                // Load preview texture
+                EditorCoroutineUtility.StartCoroutineOwnerless(LoadSpritesheetPreview(animatedResponse.SpritesheetUrl));
             }
-            catch (Exception e)
+            else
             {
-                statusMessage = $"Error parsing sprite animation response: {e.Message}";
-                Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+                statusMessage = "Sprite animation response contained no spritesheet.";
+                Debug.LogWarning($"[LudoAIPlugin] {statusMessage} Body: {job.Body}");
                 EditorUtility.DisplayDialog("Sprite Animation Error", statusMessage, "OK");
             }
+        }
+        catch (Exception e)
+        {
+            statusMessage = $"Error parsing sprite animation response: {e.Message}";
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog("Sprite Animation Error", statusMessage, "OK");
         }
 
         isProcessing = false;
@@ -3506,9 +3482,6 @@ public class LudoAIPlugin : EditorWindow
             yield break;
         }
 
-        string endpoint = "/assets/image";
-        string fullUrl = apiUrl + endpoint;
-
         var requestData = new Dictionary<string, object>
         {
             ["image_type"] = imageType,
@@ -3520,75 +3493,58 @@ public class LudoAIPlugin : EditorWindow
         // Add optional parameters
         if (!string.IsNullOrEmpty(imageGenre))
             requestData["genre"] = imageGenre;
-        
+
         if (!string.IsNullOrEmpty(imagePlatform))
             requestData["platform"] = imagePlatform;
-        
+
         if (!string.IsNullOrEmpty(imageArtStyle) && imageArtStyle != "Any style")
             requestData["art_style"] = imageArtStyle;
-        
+
         if (!string.IsNullOrEmpty(imagePerspective) && imagePerspective != "Any perspective")
             requestData["perspective"] = imagePerspective;
-        
+
         if (!string.IsNullOrEmpty(imageAspectRatio) && imageAspectRatio != "default")
             requestData["aspect_ratio"] = imageAspectRatio;
 
-        string jsonData = JsonConvert.SerializeObject(requestData);
-        Debug.Log($"[LudoAIPlugin] Image generation request payload: {jsonData}");
-        Debug.Log($"[LudoAIPlugin] Full URL: {fullUrl}");
-        byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonData);
+        var job = new EditorHttpResult();
+        yield return RunApiJob("/assets/image", requestData, "Generating image(s)", job);
 
-        UnityWebRequest www = new UnityWebRequest(fullUrl, "POST");
-        www.SetRequestHeader("x-ludo-tool", "unity");
-        www.SetRequestHeader("Authorization", "ApiKey " + apiKey);
-        www.SetRequestHeader("Content-Type", "application/json");
-        www.uploadHandler = new UploadHandlerRaw(bodyRaw);
-        www.downloadHandler = new DownloadHandlerBuffer();
-        www.timeout = 600;
-
-        yield return www.SendWebRequest();
-
-        if (www.result != UnityWebRequest.Result.Success)
+        if (!job.Success)
         {
-            statusMessage = $"Error generating image: {www.error}";
+            statusMessage = FormatEditorHttpError("generating image", job);
             Debug.LogError($"[LudoAIPlugin] {statusMessage}");
-            if (www.downloadHandler != null && !string.IsNullOrEmpty(www.downloadHandler.text))
-            {
-                Debug.LogError($"[LudoAIPlugin] Response details: {www.downloadHandler.text}");
-            }
             EditorUtility.DisplayDialog("Image Generation Error", statusMessage, "OK");
+            isProcessing = false;
+            yield break;
         }
-        else
-        {
-            try
-            {
-                string json = www.downloadHandler.text;
-                var images = JsonConvert.DeserializeObject<List<GeneratedImage>>(json);
 
-                if (images != null && images.Count > 0)
-                {
-                    generatedImages.AddRange(images);
-                    statusMessage = $"Generated {images.Count} image(s) successfully!";
-                    Debug.Log($"[LudoAIPlugin] {statusMessage}");
-                    
-                    // Load preview images
-                    foreach (var image in images)
-                    {
-                        EditorCoroutineUtility.StartCoroutineOwnerless(LoadImagePreview(image));
-                    }
-                }
-                else
-                {
-                    statusMessage = "No images generated.";
-                    Debug.LogWarning($"[LudoAIPlugin] {statusMessage}");
-                }
-            }
-            catch (Exception e)
+        try
+        {
+            var images = JsonConvert.DeserializeObject<List<GeneratedImage>>(job.Body);
+
+            if (images != null && images.Count > 0)
             {
-                statusMessage = $"Error parsing image response: {e.Message}";
-                Debug.LogError($"[LudoAIPlugin] {statusMessage}");
-                EditorUtility.DisplayDialog("Image Generation Error", statusMessage, "OK");
+                generatedImages.AddRange(images);
+                statusMessage = $"Generated {images.Count} image(s) successfully!";
+                Debug.Log($"[LudoAIPlugin] {statusMessage}");
+
+                // Load preview images
+                foreach (var image in images)
+                {
+                    EditorCoroutineUtility.StartCoroutineOwnerless(LoadImagePreview(image));
+                }
             }
+            else
+            {
+                statusMessage = "No images generated.";
+                Debug.LogWarning($"[LudoAIPlugin] {statusMessage}");
+            }
+        }
+        catch (Exception e)
+        {
+            statusMessage = $"Error parsing image response: {e.Message}";
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog("Image Generation Error", statusMessage, "OK");
         }
 
         isProcessing = false;
@@ -3682,9 +3638,6 @@ public class LudoAIPlugin : EditorWindow
             yield break;
         }
 
-        string endpoint = "/assets/3d-model";
-        string fullUrl = apiUrl + endpoint;
-
         // Match Create3DModelPayload from API swagger (no high_detail_shape / 4096 texture).
         var requestData = new Dictionary<string, object>
         {
@@ -3694,18 +3647,14 @@ public class LudoAIPlugin : EditorWindow
             ["texture_type"] = model3DTextureType
         };
 
-        string jsonData = JsonConvert.SerializeObject(requestData);
-        Debug.Log($"[LudoAIPlugin] 3D Model creation request to {fullUrl} (faces={model3DTargetFaces}, texture={model3DTextureSize}, type={model3DTextureType}, body_bytes={Encoding.UTF8.GetByteCount(jsonData)}, image_chars={normalizedImage.Length})");
-        statusMessage = "Creating 3D model from image... Uploading via HttpClient (more reliable for large images).";
+        Debug.Log($"[LudoAIPlugin] 3D Model creation request (faces={model3DTargetFaces}, texture={model3DTextureSize}, type={model3DTextureType}, image_chars={normalizedImage.Length})");
 
-        // UnityWebRequest often fails with HTTP 0 / "Unknown Error" on large base64 JSON uploads.
-        // Use System.Net.Http.HttpClient in the Editor instead.
-        var httpResult = new EditorHttpResult();
-        yield return PostJsonWithHttpClient(fullUrl, jsonData, 3600, httpResult);
+        var job = new EditorHttpResult();
+        yield return RunApiJob("/assets/3d-model", requestData, "Creating 3D model", job);
 
-        if (!httpResult.Success)
+        if (!job.Success)
         {
-            statusMessage = FormatEditorHttpError("creating 3D model", httpResult);
+            statusMessage = FormatEditorHttpError("creating 3D model", job);
             Debug.LogError($"[LudoAIPlugin] {statusMessage}");
             EditorUtility.DisplayDialog("3D Model Creation Error", statusMessage, "OK");
             isProcessing = false;
@@ -3714,8 +3663,7 @@ public class LudoAIPlugin : EditorWindow
 
         try
         {
-            string json = httpResult.Body;
-            current3DModel = JsonConvert.DeserializeObject<Generated3DModel>(json);
+            current3DModel = JsonConvert.DeserializeObject<Generated3DModel>(job.Body);
             model3DSnapshotTextures.Clear();
 
             if (current3DModel != null && !string.IsNullOrEmpty(current3DModel.ModelUrl))
@@ -3733,8 +3681,10 @@ public class LudoAIPlugin : EditorWindow
             }
             else
             {
-                statusMessage = "Failed to parse 3D model response.";
-                Debug.LogWarning($"[LudoAIPlugin] {statusMessage} Body: {json}");
+                current3DModel = null;
+                statusMessage = "3D model response contained no model.";
+                Debug.LogWarning($"[LudoAIPlugin] {statusMessage} Body: {job.Body}");
+                EditorUtility.DisplayDialog("3D Model Creation Error", statusMessage, "OK");
             }
         }
         catch (Exception e)
@@ -3747,6 +3697,22 @@ public class LudoAIPlugin : EditorWindow
         isProcessing = false;
     }
 
+    // ============================
+    // ====== API JOB RUNNER ======
+    // ============================
+    // Generation endpoints answer 202 with a job ({ id, status, poll_after_ms }) and the
+    // work runs on Ludo's queue. The result arrives by polling GET /assets/jobs/{id}
+    // until status is succeeded or failed; a succeeded job's `result` is exactly the
+    // body the endpoint documents, so callers parse it as before.
+
+    // How long to keep polling one job before handing control back to the user.
+    private float jobTimeoutSeconds = 30 * 60;
+    // Long-poll: the server holds the status request until the job finishes or this many
+    // seconds pass (max 60), so a job is seen the moment it completes.
+    private const int JobLongPollSeconds = 30;
+    // Consecutive failed status polls (network, 5xx) tolerated before giving up.
+    private const int MaxConsecutivePollFailures = 5;
+
     private class EditorHttpResult
     {
         public bool Done;
@@ -3754,9 +3720,157 @@ public class LudoAIPlugin : EditorWindow
         public long StatusCode;
         public string Body = "";
         public string Error = "";
+        public float RetryAfterSeconds;
     }
 
-    private IEnumerator PostJsonWithHttpClient(string url, string jsonBody, int timeoutSeconds, EditorHttpResult result)
+    // Submits a generation and follows its job to the end. On success result.Body holds
+    // the operation's result JSON; on failure result.Error / result.Body say why.
+    private IEnumerator RunApiJob(string endpoint, Dictionary<string, object> payload, string progressLabel, EditorHttpResult result)
+    {
+        string fullUrl = apiUrl + endpoint;
+        var settings = new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore };
+        string jsonData = JsonConvert.SerializeObject(payload, settings);
+        Debug.Log($"[LudoAIPlugin] POST {fullUrl} ({Encoding.UTF8.GetByteCount(jsonData)} bytes)");
+
+        // HttpClient rather than UnityWebRequest: UnityWebRequest often fails with HTTP 0 /
+        // "Unknown Error" on large base64 JSON uploads (3D models, images from disk).
+        var submit = new EditorHttpResult();
+        yield return SendJsonWithHttpClient(HttpMethod.Post, fullUrl, jsonData, 600, submit);
+
+        if (!submit.Success)
+        {
+            CopyHttpResult(submit, result);
+            yield break;
+        }
+
+        // 200 is a synchronous body (async: false, or an older server); 202 is a job.
+        if (submit.StatusCode != 202)
+        {
+            CopyHttpResult(submit, result);
+            yield break;
+        }
+
+        ApiJob job = ParseApiJob(submit.Body);
+        if (job == null)
+        {
+            result.Success = false;
+            result.StatusCode = submit.StatusCode;
+            result.Error = "Unexpected response from the job queue";
+            result.Body = submit.Body;
+            yield break;
+        }
+        Debug.Log($"[LudoAIPlugin] Job {job.Id} {job.Status}");
+
+        double started = EditorApplication.timeSinceStartup;
+        int consecutiveFailures = 0;
+        float waitSeconds = (job.PollAfterMs ?? 2000) / 1000f;
+
+        while (true)
+        {
+            if (job.Status == "succeeded")
+            {
+                result.Success = true;
+                result.StatusCode = 200;
+                result.Error = "";
+                result.Body = job.Result != null ? job.Result.ToString(Formatting.None) : "";
+                Debug.Log($"[LudoAIPlugin] Job {job.Id} succeeded after {EditorApplication.timeSinceStartup - started:F0}s");
+                yield break;
+            }
+
+            if (job.Status == "failed" || job.Status == "canceled")
+            {
+                result.Success = false;
+                result.StatusCode = job.Error != null && job.Error.Status.HasValue ? job.Error.Status.Value : 0;
+                result.Error = job.Status == "canceled"
+                    ? "The job was canceled"
+                    : (job.Error != null && !string.IsNullOrEmpty(job.Error.Message) ? job.Error.Message : "Generation failed");
+                result.Body = "";
+                yield break;
+            }
+
+            double elapsed = EditorApplication.timeSinceStartup - started;
+            if (elapsed >= jobTimeoutSeconds)
+            {
+                result.Success = false;
+                result.StatusCode = 0;
+                result.Error = $"Job {job.Id} is still {job.Status} after {FormatElapsed(elapsed)}. " +
+                               "It may still finish: its result will be listed under your API generations.";
+                result.Body = "";
+                yield break;
+            }
+
+            statusMessage = $"{progressLabel}... {job.Status} ({FormatElapsed(elapsed)})";
+            Repaint();
+
+            yield return new EditorWaitForSeconds(Mathf.Max(waitSeconds, 0f));
+
+            var poll = new EditorHttpResult();
+            string pollUrl = $"{apiUrl}/assets/jobs/{Uri.EscapeDataString(job.Id)}?wait={JobLongPollSeconds}";
+            yield return SendJsonWithHttpClient(HttpMethod.Get, pollUrl, null, JobLongPollSeconds + 60, poll);
+
+            ApiJob next = poll.Success ? ParseApiJob(poll.Body) : null;
+            if (next != null)
+            {
+                consecutiveFailures = 0;
+                job = next;
+                waitSeconds = (job.PollAfterMs ?? 2000) / 1000f;
+                continue;
+            }
+
+            // 429: the status endpoint is rate-limited per key; wait as told and carry on.
+            if (poll.StatusCode == 429)
+            {
+                waitSeconds = poll.RetryAfterSeconds > 0 ? poll.RetryAfterSeconds : 5f;
+                Debug.LogWarning($"[LudoAIPlugin] Job {job.Id}: status polls rate-limited, retrying in {waitSeconds:F0}s");
+                continue;
+            }
+
+            // Any other 4xx (404: no such job for this key) will not get better by retrying.
+            bool transient = poll.Success || poll.StatusCode == 0 || poll.StatusCode == 408 || poll.StatusCode >= 500;
+            consecutiveFailures++;
+            if (!transient || consecutiveFailures > MaxConsecutivePollFailures)
+            {
+                CopyHttpResult(poll, result);
+                result.Success = false;
+                if (string.IsNullOrEmpty(result.Error)) result.Error = "Could not read the job status";
+                result.Error = $"{result.Error} (job {job.Id})";
+                yield break;
+            }
+
+            waitSeconds = Mathf.Min(2f * consecutiveFailures, 10f);
+            Debug.LogWarning($"[LudoAIPlugin] Job {job.Id}: status poll failed ({(string.IsNullOrEmpty(poll.Error) ? "HTTP " + poll.StatusCode : poll.Error)}), retrying in {waitSeconds:F0}s");
+        }
+    }
+
+    private static ApiJob ParseApiJob(string body)
+    {
+        try
+        {
+            ApiJob job = JsonConvert.DeserializeObject<ApiJob>(body);
+            return job != null && !string.IsNullOrEmpty(job.Id) && !string.IsNullOrEmpty(job.Status) ? job : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    private static void CopyHttpResult(EditorHttpResult from, EditorHttpResult to)
+    {
+        to.Success = from.Success;
+        to.StatusCode = from.StatusCode;
+        to.Body = from.Body;
+        to.Error = from.Error;
+        to.RetryAfterSeconds = from.RetryAfterSeconds;
+    }
+
+    private static string FormatElapsed(double seconds)
+    {
+        int s = (int)seconds;
+        return s < 60 ? $"{s}s" : $"{s / 60}m {s % 60:D2}s";
+    }
+
+    private IEnumerator SendJsonWithHttpClient(HttpMethod method, string url, string jsonBody, int timeoutSeconds, EditorHttpResult result)
     {
         string authKey = apiKey;
         Task task = Task.Run(async () =>
@@ -3770,17 +3884,24 @@ public class LudoAIPlugin : EditorWindow
                 using (var client = new HttpClient(handler))
                 {
                     client.Timeout = TimeSpan.FromSeconds(timeoutSeconds);
-                    using (var request = new HttpRequestMessage(HttpMethod.Post, url))
+                    using (var request = new HttpRequestMessage(method, url))
                     {
                         request.Headers.TryAddWithoutValidation("Authorization", "ApiKey " + authKey);
                         request.Headers.TryAddWithoutValidation("x-ludo-tool", "unity");
-                        request.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+                        if (jsonBody != null)
+                        {
+                            request.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+                        }
 
                         using (var response = await client.SendAsync(request).ConfigureAwait(false))
                         {
                             result.StatusCode = (long)response.StatusCode;
                             result.Body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
                             result.Success = response.IsSuccessStatusCode;
+                            if (response.Headers.RetryAfter != null && response.Headers.RetryAfter.Delta.HasValue)
+                            {
+                                result.RetryAfterSeconds = (float)response.Headers.RetryAfter.Delta.Value.TotalSeconds;
+                            }
                             if (!result.Success && string.IsNullOrEmpty(result.Error))
                             {
                                 result.Error = $"HTTP {result.StatusCode}";
@@ -3794,7 +3915,7 @@ public class LudoAIPlugin : EditorWindow
                 result.Success = false;
                 result.StatusCode = 0;
                 result.Error = e.GetBaseException().Message;
-                Debug.LogError($"[LudoAIPlugin] HttpClient POST failed: {e}");
+                Debug.LogWarning($"[LudoAIPlugin] HttpClient {method} {url} failed: {e.GetBaseException().Message}");
             }
             finally
             {
@@ -3802,14 +3923,8 @@ public class LudoAIPlugin : EditorWindow
             }
         });
 
-        float elapsed = 0f;
         while (!result.Done)
         {
-            elapsed += 0.25f;
-            if (elapsed >= 5f && Mathf.FloorToInt(elapsed) % 15 == 0)
-            {
-                statusMessage = $"Creating 3D model... still working ({Mathf.FloorToInt(elapsed)}s). Large jobs can take several minutes.";
-            }
             yield return new EditorWaitForSeconds(0.25f);
         }
 
@@ -3819,54 +3934,39 @@ public class LudoAIPlugin : EditorWindow
 
     private string FormatEditorHttpError(string action, EditorHttpResult result)
     {
-        string details = $"Error {action}: {(string.IsNullOrEmpty(result.Error) ? "Request failed" : result.Error)} (HTTP {result.StatusCode})";
+        // Prefer the API's own explanation ({"message": ...}) over the bare status line.
+        string reason = null;
+        string extra = null;
         if (!string.IsNullOrEmpty(result.Body))
         {
             string body = result.Body.Trim();
             try
             {
                 JObject err = JObject.Parse(body);
-                string message = err.Value<string>("message");
-                if (!string.IsNullOrEmpty(message))
+                reason = err.Value<string>("message");
+                if (string.IsNullOrEmpty(reason))
                 {
-                    details += $"\n{message}";
-                }
-                else
-                {
-                    details += $"\n{TruncateForUi(body, 500)}";
+                    extra = TruncateForUi(body, 500);
                 }
             }
             catch
             {
-                details += $"\n{TruncateForUi(body, 500)}";
+                extra = TruncateForUi(body, 500);
             }
         }
-        return details;
-    }
-
-    private string FormatUnityWebRequestError(string action, UnityWebRequest www)
-    {
-        string details = $"Error {action}: {www.error} (HTTP {www.responseCode})";
-        if (www.downloadHandler != null && !string.IsNullOrEmpty(www.downloadHandler.text))
+        if (string.IsNullOrEmpty(reason))
         {
-            string body = www.downloadHandler.text.Trim();
-            try
-            {
-                JObject err = JObject.Parse(body);
-                string message = err.Value<string>("message");
-                if (!string.IsNullOrEmpty(message))
-                {
-                    details += $"\n{message}";
-                }
-                else
-                {
-                    details += $"\n{TruncateForUi(body, 500)}";
-                }
-            }
-            catch
-            {
-                details += $"\n{TruncateForUi(body, 500)}";
-            }
+            reason = string.IsNullOrEmpty(result.Error) ? "Request failed" : result.Error;
+        }
+
+        string details = $"Error {action}: {reason}";
+        if (result.StatusCode > 0)
+        {
+            details += $" (HTTP {result.StatusCode})";
+        }
+        if (!string.IsNullOrEmpty(extra))
+        {
+            details += $"\n{extra}";
         }
         return details;
     }
@@ -3885,9 +3985,6 @@ public class LudoAIPlugin : EditorWindow
             yield break;
         }
 
-        string endpoint = "/assets/3d-model/rig";
-        string fullUrl = apiUrl + endpoint;
-
         var requestData = new Dictionary<string, object>
         {
             ["model"] = model3DRigModelInput,
@@ -3895,16 +3992,14 @@ public class LudoAIPlugin : EditorWindow
             ["joint_naming"] = model3DJointNaming
         };
 
-        string jsonData = JsonConvert.SerializeObject(requestData);
-        Debug.Log($"[LudoAIPlugin] 3D Model rig request to {fullUrl} (rig_type={model3DRigType}, joint_naming={model3DJointNaming}, model_chars={model3DRigModelInput.Length})");
-        statusMessage = "Rigging 3D model... This can take several minutes.";
+        Debug.Log($"[LudoAIPlugin] 3D Model rig request (rig_type={model3DRigType}, joint_naming={model3DJointNaming}, model_chars={model3DRigModelInput.Length})");
 
-        var httpResult = new EditorHttpResult();
-        yield return PostJsonWithHttpClient(fullUrl, jsonData, 3600, httpResult);
+        var job = new EditorHttpResult();
+        yield return RunApiJob("/assets/3d-model/rig", requestData, "Rigging 3D model", job);
 
-        if (!httpResult.Success)
+        if (!job.Success)
         {
-            statusMessage = FormatEditorHttpError("rigging 3D model", httpResult);
+            statusMessage = FormatEditorHttpError("rigging 3D model", job);
             Debug.LogError($"[LudoAIPlugin] {statusMessage}");
             EditorUtility.DisplayDialog("3D Model Rig Error", statusMessage, "OK");
             isProcessing = false;
@@ -3913,8 +4008,7 @@ public class LudoAIPlugin : EditorWindow
 
         try
         {
-            string json = httpResult.Body;
-            currentRigged3DModel = JsonConvert.DeserializeObject<Rigged3DModelResult>(json);
+            currentRigged3DModel = JsonConvert.DeserializeObject<Rigged3DModelResult>(job.Body);
 
             if (currentRigged3DModel != null && !string.IsNullOrEmpty(currentRigged3DModel.ModelUrl))
             {
@@ -3923,8 +4017,10 @@ public class LudoAIPlugin : EditorWindow
             }
             else
             {
-                statusMessage = "Failed to parse rigged 3D model response.";
-                Debug.LogWarning($"[LudoAIPlugin] {statusMessage}");
+                currentRigged3DModel = null;
+                statusMessage = "Rig response contained no model.";
+                Debug.LogWarning($"[LudoAIPlugin] {statusMessage} Body: {job.Body}");
+                EditorUtility.DisplayDialog("3D Model Rig Error", statusMessage, "OK");
             }
         }
         catch (Exception e)
@@ -3957,9 +4053,6 @@ public class LudoAIPlugin : EditorWindow
             yield break;
         }
 
-        string endpoint = "/assets/3d-model/animate";
-        string fullUrl = apiUrl + endpoint;
-
         var requestData = new Dictionary<string, object>
         {
             ["model"] = model3DAnimateModelInput,
@@ -3970,16 +4063,14 @@ public class LudoAIPlugin : EditorWindow
             ["augment_prompt"] = model3DAnimateAugmentPrompt
         };
 
-        string jsonData = JsonConvert.SerializeObject(requestData);
-        Debug.Log($"[LudoAIPlugin] 3D Model animate request to {fullUrl} (prompt={model3DAnimatePrompt}, variants={model3DAnimateNumVariants}, mode={model3DAnimateMode})");
-        statusMessage = "Animating 3D model... This can take several minutes.";
+        Debug.Log($"[LudoAIPlugin] 3D Model animate request (prompt={model3DAnimatePrompt}, variants={model3DAnimateNumVariants}, mode={model3DAnimateMode})");
 
-        var httpResult = new EditorHttpResult();
-        yield return PostJsonWithHttpClient(fullUrl, jsonData, 3600, httpResult);
+        var job = new EditorHttpResult();
+        yield return RunApiJob("/assets/3d-model/animate", requestData, "Animating 3D model", job);
 
-        if (!httpResult.Success)
+        if (!job.Success)
         {
-            statusMessage = FormatEditorHttpError("animating 3D model", httpResult);
+            statusMessage = FormatEditorHttpError("animating 3D model", job);
             Debug.LogError($"[LudoAIPlugin] {statusMessage}");
             EditorUtility.DisplayDialog("3D Model Animate Error", statusMessage, "OK");
             isProcessing = false;
@@ -3988,8 +4079,7 @@ public class LudoAIPlugin : EditorWindow
 
         try
         {
-            string json = httpResult.Body;
-            AnimationCandidates response = JsonConvert.DeserializeObject<AnimationCandidates>(json);
+            AnimationCandidates response = JsonConvert.DeserializeObject<AnimationCandidates>(job.Body);
 
             if (response != null && response.Animations != null && response.Animations.Count > 0)
             {
@@ -4002,6 +4092,7 @@ public class LudoAIPlugin : EditorWindow
                 current3DAnimations = new List<AnimationClip3D>();
                 statusMessage = "Animation response contained no candidates.";
                 Debug.LogWarning($"[LudoAIPlugin] {statusMessage}");
+                EditorUtility.DisplayDialog("3D Model Animate Error", statusMessage, "OK");
             }
         }
         catch (Exception e)
@@ -4099,9 +4190,6 @@ public class LudoAIPlugin : EditorWindow
             yield break;
         }
 
-        string endpoint = "/audio/sound-effect";
-        string fullUrl = apiUrl + endpoint;
-
         var requestData = new Dictionary<string, object>
         {
             ["description"] = soundEffectDescription,
@@ -4109,58 +4197,7 @@ public class LudoAIPlugin : EditorWindow
             ["augment_prompt"] = soundEffectAugment
         };
 
-        string jsonData = JsonConvert.SerializeObject(requestData);
-        Debug.Log($"[LudoAIPlugin] Sound effect generation request payload: {jsonData}");
-        Debug.Log($"[LudoAIPlugin] Full URL: {fullUrl}");
-        byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonData);
-
-        UnityWebRequest www = new UnityWebRequest(fullUrl, "POST");
-        www.SetRequestHeader("x-ludo-tool", "unity");
-        www.SetRequestHeader("Authorization", "ApiKey " + apiKey);
-        www.SetRequestHeader("Content-Type", "application/json");
-        www.uploadHandler = new UploadHandlerRaw(bodyRaw);
-        www.downloadHandler = new DownloadHandlerBuffer();
-        www.timeout = 600;
-
-        yield return www.SendWebRequest();
-
-        if (www.result != UnityWebRequest.Result.Success)
-        {
-            statusMessage = $"Error generating sound effect: {www.error}";
-            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
-            if (www.downloadHandler != null && !string.IsNullOrEmpty(www.downloadHandler.text))
-            {
-                Debug.LogError($"[LudoAIPlugin] Response details: {www.downloadHandler.text}");
-            }
-            EditorUtility.DisplayDialog("Sound Effect Generation Error", statusMessage, "OK");
-        }
-        else
-        {
-            try
-            {
-                string json = www.downloadHandler.text;
-                currentSoundEffect = JsonConvert.DeserializeObject<GeneratedAudio>(json);
-
-                if (currentSoundEffect != null)
-                {
-                    statusMessage = "Sound effect generated successfully!";
-                    Debug.Log($"[LudoAIPlugin] {statusMessage}");
-                }
-                else
-                {
-                    statusMessage = "Failed to parse sound effect response.";
-                    Debug.LogWarning($"[LudoAIPlugin] {statusMessage}");
-                }
-            }
-            catch (Exception e)
-            {
-                statusMessage = $"Error parsing sound effect response: {e.Message}";
-                Debug.LogError($"[LudoAIPlugin] {statusMessage}");
-                EditorUtility.DisplayDialog("Sound Effect Generation Error", statusMessage, "OK");
-            }
-        }
-
-        isProcessing = false;
+        yield return GenerateAudio("/audio/sound-effect", requestData, "sound effect", "Sound Effect", audio => currentSoundEffect = audio);
     }
 
     private IEnumerator CreateMusic()
@@ -4172,9 +4209,6 @@ public class LudoAIPlugin : EditorWindow
             yield break;
         }
 
-        string endpoint = "/audio/music";
-        string fullUrl = apiUrl + endpoint;
-
         var requestData = new Dictionary<string, object>
         {
             ["description"] = musicDescription,
@@ -4185,58 +4219,7 @@ public class LudoAIPlugin : EditorWindow
         if (!string.IsNullOrEmpty(musicLyrics))
             requestData["lyrics"] = musicLyrics;
 
-        string jsonData = JsonConvert.SerializeObject(requestData);
-        Debug.Log($"[LudoAIPlugin] Music generation request payload: {jsonData}");
-        Debug.Log($"[LudoAIPlugin] Full URL: {fullUrl}");
-        byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonData);
-
-        UnityWebRequest www = new UnityWebRequest(fullUrl, "POST");
-        www.SetRequestHeader("x-ludo-tool", "unity");
-        www.SetRequestHeader("Authorization", "ApiKey " + apiKey);
-        www.SetRequestHeader("Content-Type", "application/json");
-        www.uploadHandler = new UploadHandlerRaw(bodyRaw);
-        www.downloadHandler = new DownloadHandlerBuffer();
-        www.timeout = 600;
-
-        yield return www.SendWebRequest();
-
-        if (www.result != UnityWebRequest.Result.Success)
-        {
-            statusMessage = $"Error generating music: {www.error}";
-            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
-            if (www.downloadHandler != null && !string.IsNullOrEmpty(www.downloadHandler.text))
-            {
-                Debug.LogError($"[LudoAIPlugin] Response details: {www.downloadHandler.text}");
-            }
-            EditorUtility.DisplayDialog("Music Generation Error", statusMessage, "OK");
-        }
-        else
-        {
-            try
-            {
-                string json = www.downloadHandler.text;
-                currentMusic = JsonConvert.DeserializeObject<GeneratedAudio>(json);
-
-                if (currentMusic != null)
-                {
-                    statusMessage = "Music generated successfully!";
-                    Debug.Log($"[LudoAIPlugin] {statusMessage}");
-                }
-                else
-                {
-                    statusMessage = "Failed to parse music response.";
-                    Debug.LogWarning($"[LudoAIPlugin] {statusMessage}");
-                }
-            }
-            catch (Exception e)
-            {
-                statusMessage = $"Error parsing music response: {e.Message}";
-                Debug.LogError($"[LudoAIPlugin] {statusMessage}");
-                EditorUtility.DisplayDialog("Music Generation Error", statusMessage, "OK");
-            }
-        }
-
-        isProcessing = false;
+        yield return GenerateAudio("/audio/music", requestData, "music", "Music", audio => currentMusic = audio);
     }
 
     private IEnumerator CreateVoice()
@@ -4260,9 +4243,6 @@ public class LudoAIPlugin : EditorWindow
             yield break;
         }
 
-        string endpoint = "/audio/voice";
-        string fullUrl = apiUrl + endpoint;
-
         var requestData = new Dictionary<string, object>
         {
             ["voice_description"] = voiceDescription,
@@ -4271,58 +4251,7 @@ public class LudoAIPlugin : EditorWindow
             ["augment_prompt"] = voiceAugment
         };
 
-        string jsonData = JsonConvert.SerializeObject(requestData);
-        Debug.Log($"[LudoAIPlugin] Voice generation request payload: {jsonData}");
-        Debug.Log($"[LudoAIPlugin] Full URL: {fullUrl}");
-        byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonData);
-
-        UnityWebRequest www = new UnityWebRequest(fullUrl, "POST");
-        www.SetRequestHeader("x-ludo-tool", "unity");
-        www.SetRequestHeader("Authorization", "ApiKey " + apiKey);
-        www.SetRequestHeader("Content-Type", "application/json");
-        www.uploadHandler = new UploadHandlerRaw(bodyRaw);
-        www.downloadHandler = new DownloadHandlerBuffer();
-        www.timeout = 600;
-
-        yield return www.SendWebRequest();
-
-        if (www.result != UnityWebRequest.Result.Success)
-        {
-            statusMessage = $"Error generating voice: {www.error}";
-            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
-            if (www.downloadHandler != null && !string.IsNullOrEmpty(www.downloadHandler.text))
-            {
-                Debug.LogError($"[LudoAIPlugin] Response details: {www.downloadHandler.text}");
-            }
-            EditorUtility.DisplayDialog("Voice Generation Error", statusMessage, "OK");
-        }
-        else
-        {
-            try
-            {
-                string json = www.downloadHandler.text;
-                currentVoice = JsonConvert.DeserializeObject<GeneratedAudio>(json);
-
-                if (currentVoice != null)
-                {
-                    statusMessage = "Voice generated successfully!";
-                    Debug.Log($"[LudoAIPlugin] {statusMessage}");
-                }
-                else
-                {
-                    statusMessage = "Failed to parse voice response.";
-                    Debug.LogWarning($"[LudoAIPlugin] {statusMessage}");
-                }
-            }
-            catch (Exception e)
-            {
-                statusMessage = $"Error parsing voice response: {e.Message}";
-                Debug.LogError($"[LudoAIPlugin] {statusMessage}");
-                EditorUtility.DisplayDialog("Voice Generation Error", statusMessage, "OK");
-            }
-        }
-
-        isProcessing = false;
+        yield return GenerateAudio("/audio/voice", requestData, "voice", "Voice", audio => currentVoice = audio);
     }
 
     private IEnumerator CreateSpeech()
@@ -4346,67 +4275,13 @@ public class LudoAIPlugin : EditorWindow
             yield break;
         }
 
-        string endpoint = "/audio/speech";
-        string fullUrl = apiUrl + endpoint;
-
         var requestData = new Dictionary<string, object>
         {
             ["text"] = speechText,
             ["sample"] = speechSample
         };
 
-        string jsonData = JsonConvert.SerializeObject(requestData);
-        Debug.Log($"[LudoAIPlugin] Speech generation request payload: {jsonData}");
-        Debug.Log($"[LudoAIPlugin] Full URL: {fullUrl}");
-        byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonData);
-
-        UnityWebRequest www = new UnityWebRequest(fullUrl, "POST");
-        www.SetRequestHeader("x-ludo-tool", "unity");
-        www.SetRequestHeader("Authorization", "ApiKey " + apiKey);
-        www.SetRequestHeader("Content-Type", "application/json");
-        www.uploadHandler = new UploadHandlerRaw(bodyRaw);
-        www.downloadHandler = new DownloadHandlerBuffer();
-        www.timeout = 600;
-
-        yield return www.SendWebRequest();
-
-        if (www.result != UnityWebRequest.Result.Success)
-        {
-            statusMessage = $"Error generating speech: {www.error}";
-            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
-            if (www.downloadHandler != null && !string.IsNullOrEmpty(www.downloadHandler.text))
-            {
-                Debug.LogError($"[LudoAIPlugin] Response details: {www.downloadHandler.text}");
-            }
-            EditorUtility.DisplayDialog("Speech Generation Error", statusMessage, "OK");
-        }
-        else
-        {
-            try
-            {
-                string json = www.downloadHandler.text;
-                currentSpeech = JsonConvert.DeserializeObject<GeneratedAudio>(json);
-
-                if (currentSpeech != null)
-                {
-                    statusMessage = "Speech generated successfully!";
-                    Debug.Log($"[LudoAIPlugin] {statusMessage}");
-                }
-                else
-                {
-                    statusMessage = "Failed to parse speech response.";
-                    Debug.LogWarning($"[LudoAIPlugin] {statusMessage}");
-                }
-            }
-            catch (Exception e)
-            {
-                statusMessage = $"Error parsing speech response: {e.Message}";
-                Debug.LogError($"[LudoAIPlugin] {statusMessage}");
-                EditorUtility.DisplayDialog("Speech Generation Error", statusMessage, "OK");
-            }
-        }
-
-        isProcessing = false;
+        yield return GenerateAudio("/audio/speech", requestData, "speech", "Speech", audio => currentSpeech = audio);
     }
 
     private IEnumerator CreateSpeechPreset()
@@ -4424,9 +4299,6 @@ public class LudoAIPlugin : EditorWindow
             yield break;
         }
 
-        string endpoint = "/audio/speech-preset";
-        string fullUrl = apiUrl + endpoint;
-
         var requestData = new Dictionary<string, object>
         {
             ["text"] = speechPresetText,
@@ -4435,55 +4307,47 @@ public class LudoAIPlugin : EditorWindow
             ["language"] = speechPresetLanguage
         };
 
-        string jsonData = JsonConvert.SerializeObject(requestData);
-        Debug.Log($"[LudoAIPlugin] Speech preset generation request payload: {jsonData}");
-        Debug.Log($"[LudoAIPlugin] Full URL: {fullUrl}");
-        byte[] bodyRaw = Encoding.UTF8.GetBytes(jsonData);
+        yield return GenerateAudio("/audio/speech-preset", requestData, "speech preset", "Speech Preset", audio => currentSpeechPreset = audio);
+    }
 
-        UnityWebRequest www = new UnityWebRequest(fullUrl, "POST");
-        www.SetRequestHeader("x-ludo-tool", "unity");
-        www.SetRequestHeader("Authorization", "ApiKey " + apiKey);
-        www.SetRequestHeader("Content-Type", "application/json");
-        www.uploadHandler = new UploadHandlerRaw(bodyRaw);
-        www.downloadHandler = new DownloadHandlerBuffer();
-        www.timeout = 600;
+    // Shared by every audio generator: run the job, then hand the result to `assign`.
+    private IEnumerator GenerateAudio(string endpoint, Dictionary<string, object> requestData, string what, string dialogName, Action<GeneratedAudio> assign)
+    {
+        var job = new EditorHttpResult();
+        yield return RunApiJob(endpoint, requestData, $"Generating {what}", job);
 
-        yield return www.SendWebRequest();
-
-        if (www.result != UnityWebRequest.Result.Success)
+        string dialogTitle = $"{dialogName} Generation Error";
+        if (!job.Success)
         {
-            statusMessage = $"Error generating speech preset: {www.error}";
+            statusMessage = FormatEditorHttpError($"generating {what}", job);
             Debug.LogError($"[LudoAIPlugin] {statusMessage}");
-            if (www.downloadHandler != null && !string.IsNullOrEmpty(www.downloadHandler.text))
-            {
-                Debug.LogError($"[LudoAIPlugin] Response details: {www.downloadHandler.text}");
-            }
-            EditorUtility.DisplayDialog("Speech Preset Generation Error", statusMessage, "OK");
+            EditorUtility.DisplayDialog(dialogTitle, statusMessage, "OK");
+            isProcessing = false;
+            yield break;
         }
-        else
-        {
-            try
-            {
-                string json = www.downloadHandler.text;
-                currentSpeechPreset = JsonConvert.DeserializeObject<GeneratedAudio>(json);
 
-                if (currentSpeechPreset != null)
-                {
-                    statusMessage = "Speech preset generated successfully!";
-                    Debug.Log($"[LudoAIPlugin] {statusMessage}");
-                }
-                else
-                {
-                    statusMessage = "Failed to parse speech preset response.";
-                    Debug.LogWarning($"[LudoAIPlugin] {statusMessage}");
-                }
-            }
-            catch (Exception e)
+        try
+        {
+            GeneratedAudio audio = JsonConvert.DeserializeObject<GeneratedAudio>(job.Body);
+
+            if (audio != null && !string.IsNullOrEmpty(audio.Url))
             {
-                statusMessage = $"Error parsing speech preset response: {e.Message}";
-                Debug.LogError($"[LudoAIPlugin] {statusMessage}");
-                EditorUtility.DisplayDialog("Speech Preset Generation Error", statusMessage, "OK");
+                assign(audio);
+                statusMessage = $"{char.ToUpper(what[0])}{what.Substring(1)} generated successfully!";
+                Debug.Log($"[LudoAIPlugin] {statusMessage}");
             }
+            else
+            {
+                statusMessage = $"The {what} response contained no audio.";
+                Debug.LogWarning($"[LudoAIPlugin] {statusMessage} Body: {job.Body}");
+                EditorUtility.DisplayDialog(dialogTitle, statusMessage, "OK");
+            }
+        }
+        catch (Exception e)
+        {
+            statusMessage = $"Error parsing {what} response: {e.Message}";
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog(dialogTitle, statusMessage, "OK");
         }
 
         isProcessing = false;
@@ -5625,5 +5489,56 @@ public class LudoAIPlugin : EditorWindow
 
         [JsonProperty("gif_url")]
         public string GifUrl { get; set; }
+
+        [JsonProperty("audio_url")]
+        public string AudioUrl { get; set; }
+
+        [JsonProperty("num_frames")]
+        public int NumFrames { get; set; }
+
+        [JsonProperty("num_cols")]
+        public int NumCols { get; set; }
+
+        [JsonProperty("num_rows")]
+        public int NumRows { get; set; }
+
+        [JsonProperty("duration")]
+        public float Duration { get; set; }
+    }
+
+    // GET /assets/jobs/{id} (and the 202 a generation endpoint answers with).
+    [Serializable]
+    public class ApiJob
+    {
+        [JsonProperty("id")]
+        public string Id { get; set; }
+
+        [JsonProperty("task_type")]
+        public string TaskType { get; set; }
+
+        // queued | running | succeeded | failed | canceled
+        [JsonProperty("status")]
+        public string Status { get; set; }
+
+        // Present when succeeded: the operation's documented response body.
+        [JsonProperty("result")]
+        public JToken Result { get; set; }
+
+        [JsonProperty("error")]
+        public ApiJobError Error { get; set; }
+
+        // Present while queued/running: wait at least this long before polling again.
+        [JsonProperty("poll_after_ms")]
+        public int? PollAfterMs { get; set; }
+    }
+
+    [Serializable]
+    public class ApiJobError
+    {
+        [JsonProperty("status")]
+        public int? Status { get; set; }
+
+        [JsonProperty("message")]
+        public string Message { get; set; }
     }
 }

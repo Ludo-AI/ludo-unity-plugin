@@ -307,7 +307,7 @@ public static class Scenarios
         c.Check(p.ErrorDialogs.Any(d => d.Message.Contains("job_")), $"timeout message doesn't name the job; dialogs: {string.Join(" / ", p.Dialogs)}");
         int polls = c.Api.Polls().Count;
         c.Check(polls >= 2 && polls < 60, $"{polls} polls in ~3s");
-        c.CheckClean(p);
+        lock (c.Api.Violations) foreach (var v in c.Api.Violations) c.Failures.Add("contract: " + v);
     }
 
     // ---------------------------------------------------------------- UI / contract sweep
