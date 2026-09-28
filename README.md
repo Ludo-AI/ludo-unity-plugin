@@ -7,6 +7,18 @@
 
 ---
 
+## What's New in 1.0.3
+
+- **Works with the current Ludo AI API.** Generations now run as jobs on Ludo's queue: the plugin submits the job, shows its progress (queued / running and elapsed time) and picks up the result when it's ready. Version 1.0.2 stopped working when the API switched to jobs on September 10, 2026 - please update.
+- **Current sprite animation models**: Hydra (default, also generates a sound effect), Forge and Forge Pixel, each with the durations it supports.
+- **3D back view**: Create 3D accepts an optional image of the subject seen from behind, so the back of the model follows it instead of being invented.
+- **Up-to-date options**: art styles, perspectives, image types and frame sizes match the API; manual margins are set per axis (horizontal / vertical); optional GIF output.
+- **Saved files are what they say they are**: images and spritesheets are converted from WebP and saved as real PNGs, audio is saved as MP3, and "Save GIF Preview" works.
+- **Clearer errors**: the API's own message is shown (e.g. "Your generation queue is full") instead of a bare HTTP status.
+- **Quieter**: the plugin no longer reacts to errors from your own scripts in the Console. The retired Projects/Scripts features were removed.
+
+---
+
 ## Table of Contents
 
 - [Overview](#overview)
@@ -39,7 +51,7 @@ The **Ludo AI Plugin** is a Unity Editor extension that integrates AI-powered as
 
 ### Compatibility
 
-- **Unity Version**: Unity 2019.4 or later (WebP support requires 2021.2+)
+- **Unity Version**: Unity 2020.2 or later
 - **Platform**: Unity Editor only (Windows, macOS, Linux)
 - **Dependencies**: Included (Editor Coroutines, Newtonsoft.Json, WebP support)
 
@@ -48,22 +60,22 @@ The **Ludo AI Plugin** is a Unity Editor extension that integrates AI-powered as
 ## Features
 
 ### Sprite & Image Generation
-- Generate sprites from text descriptions
-- Create game screenshots, icons, UI assets, textures
-- 20+ art styles (Pixel Art, Low Poly, Cartoonish, etc.)
-- 9 perspective options (Top-Down, Isometric, Side-Scroll, etc.)
+- Generate sprites and images from text descriptions
+- 22 image types: sprites, icons, logos, UI assets, portraits, card art, backgrounds, tiles, textures and more
+- 30+ art styles (8/16/32-Bit pixel art, Low Poly, Anime/Manga, Watercolor, etc.)
+- 10 perspective options (Top-Down, Isometric, Side-Scroll, High Angle, etc.)
 - Multiple aspect ratios (1:1, 16:9, 9:16, etc.)
 - Batch generation (1-8 images at once)
 
 ### Sprite Animation
 - Convert static sprites to animated spritesheets
+- Models: Hydra (with sound effect), Forge, Forge Pixel (pixel art)
 - Control frame count (4-64 frames)
-- Adjustable frame sizes (64x64 to Max)
-- Export as spritesheet, GIF, or video
-- Pixel art filter support
+- Frame sizes from 32x32 to 384x384, Max, AI upscale (1.5x) or matching the input frame
+- Export as spritesheet (PNG), GIF, and the sound effect (Hydra)
 
 ### 3D Model Generation
-- Convert 2D images to 3D models
+- Convert 2D images to 3D models, optionally with a back view of the subject
 - Rig models with Mixamo-friendly joint naming for Unity (BETA)
 - Animate rigged models from text prompts — multi-variant clips + MP4 previews (BETA)
 - Adjustable face count (1,000-200,000)
@@ -130,13 +142,13 @@ Let's generate a simple sprite:
 1. Open the plugin window
 2. Go to **Sprites & Images** tab
 3. In the prompt field, enter: `"pixel art treasure chest"`
-4. Select **Art Style**: "Pixel Art (16-Bit)"
-5. Select **Perspective**: "Top-Down"
-6. Set **Quality**: High
-7. Click **Generate Sprite**
-8. Wait for generation (10-60 seconds)
+4. Select **Image Type**: "sprite"
+5. Select **Art Style**: "16-Bit"
+6. Select **Perspective**: "Top-Down"
+7. Click **Generate Image(s)**
+8. Wait for generation (usually 10-60 seconds; the status line shows progress)
 9. Preview the sprite
-10. Click **Save Sprite** to save to `Assets/Sprites/`
+10. Click **Save to File** to save it as a PNG
 
 ### Your First 3D Model
 
@@ -153,56 +165,29 @@ Let's generate a simple sprite:
 
 ### Generate Sprite
 
-Perfect for creating game sprites with specific art styles.
+Create sprites, icons, UI assets, backgrounds, textures and more from a description.
 
 **Workflow:**
 
-1. **Enter Description**: Describe your sprite clearly
+1. **Enter Description**: Describe what you want clearly
    - Good: "pixel art sword with blue blade"
    - Bad: "weapon"
 
-2. **Select Art Style**: Choose from dropdown or enter custom
-   - Pixel Art (8-Bit, 16-Bit)
-   - Low Poly
-   - Cartoonish
-   - Flat Design
-   - And more...
+2. **Image Type**: sprite, sprite-vfx, icon, item-icon, logo, ui_asset, portrait, card-art, screenshot, splash, backgrounds (fixed, side-scrolling, vertical-scrolling, parallax layer), tile, texture, 3d, and more
 
-3. **Select Perspective**: Match your game's view
-   - Top-Down
-   - Isometric
-   - Side-Scroll
-   - 2.5D
+3. **Art Style**: e.g. 8-Bit, 16-Bit, 32-Bit, Hi-Bit, Low Poly, Anime/Manga, Chibi, Watercolor, Flat Design, or "Any style"
 
-4. **Set Quality**: 
-   - **Low**: Faster generation, lower quality
-   - **Medium**: Balanced
-   - **High**: Best quality, slower
+4. **Perspective**: e.g. Top-Down, Isometric, Side-Scroll, High Angle, 2.5D, or "Any perspective"
 
-5. **Prompt Augmentation**: Enable to let AI enhance your description
+5. **Aspect Ratio**: Default, 1:1, 4:3, 16:9, 19:9, 3:4, 9:16, 9:19
 
-6. **Generate**: Click the button and wait
+6. **Number of Images**: Generate 1-8 at once
 
-7. **Save**: Click "Save Sprite" to save to `Assets/Sprites/`
+7. **Augment Prompt**: Enable to let AI enhance your description
 
-### Generate Images
+8. **Generate**: Click "Generate Image(s)". The status line shows the job's progress.
 
-For screenshots, icons, UI assets, textures, backgrounds, and more.
-
-**Additional Options:**
-
-- **Image Type**: screenshot, icon, art, sprite, ui_asset, texture, etc.
-- **Genre**: Hypercasual, Casual, Action, Puzzle, etc. (23 options)
-- **Platform**: Mobile, Desktop, Web
-- **Aspect Ratio**: Default, 1:1, 16:9, 9:16, etc.
-- **Number of Images**: Generate 1-8 images at once
-
-**Use Cases:**
-- Game screenshots for marketing
-- App icons
-- UI elements
-- Background art
-- Texture generation
+9. **Save / Select**: "Save to File" saves a PNG; "Select" makes the image the input for **Animate Sprite**
 
 ### Animate Sprite to Spritesheet
 
@@ -218,26 +203,27 @@ Turn static sprites into animated spritesheets.
 
 3. **Configure Frames**:
    - **Frame Count**: 4, 9, 16, 25, 36, 49, or 64 frames
-   - **Frame Size**: 64x64, 128x128, 256x256, or Max
+   - **Frame Size**: 32x32 up to 384x384, Max, AI upscale (1.5x), or Match input frame
    - **Loop**: Enable for seamless looping animations
 
 4. **Crop & Margins**:
    - **Crop to Content**: Remove empty space
-   - **Margin Mode**: Auto, Manual, or None
+   - **Margin Mode**: Auto, Manual, or None. In Manual, set the horizontal and vertical margins separately (e.g. more horizontal room for a sword slash, more vertical room for a jump)
 
-5. **Pixel Art Filter**: none, small, medium, large (for pixel art sprites)
+5. **Animation Model**:
+   - **Hydra** (default): Most capable all-around model; also generates a sound effect. 3-5 s
+   - **Forge**: Cost-effective for basic animations and simple sprites. 1-5 s
+   - **Forge Pixel**: Best for low-res pixel art. 1-5 s
 
-6. **Animation Model**:
-   - **Standard**: Reliable, tested model
-   - **New**: Experimental, different results
+6. **Duration**: The options offered depend on the model
 
-7. **Duration**: Adjust animation length (varies by model)
+7. **Image Type**: sprite, sprite-vfx, item-icon, ui_asset, logo, tiling sprites, parallax layer, tile, texture, portrait, card-art
 
-8. **Generate**: Click "Animate Sprite"
+8. **Also create a GIF**: Enable to get an animated GIF as well
 
-9. **Preview**: View spritesheet, GIF, or video preview
+9. **Generate**: Click "Animate Sprite". The status line shows the job's progress.
 
-10. **Save**: Save spritesheet or GIF to `Assets/Spritesheets/`
+10. **Save**: "Save Spritesheet" (PNG), "Save GIF Preview" (when a GIF was requested), "Save Sound Effect" (Hydra)
 
 **Using Spritesheets in Unity:**
 
@@ -262,6 +248,8 @@ The **3D Models** tab has three subtabs: **Create 3D**, **Rig Model**, and **Ani
    - Enter image URL, or
    - Click "Select from Project" to use existing image
    - Or paste base64 encoded image
+
+   **Back View (optional)**: an image of the *same* subject seen from behind (rotated 180°), at the same scale, pose and style. Paste a URL or click "Select Back View". The model's back then follows it instead of being invented from the front. Only a back view works - a side or three-quarter view distorts the model. No extra cost.
 
 2. **Target Face Count**: 
    - **1,000-10,000**: Low poly, mobile-friendly
@@ -555,7 +543,7 @@ Assets/
 - Saves time over individual generations
 
 **API Considerations:**
-- Generation timeout: 10 minutes max
+- Generations run as queued jobs; the plugin waits up to 30 minutes for one
 - Preview assets before saving to avoid clutter
 - Delete unwanted assets to keep project clean
 
@@ -586,7 +574,7 @@ Assets/
 
 ### API Connection Issues
 
-#### 403 Forbidden Error
+#### "Invalid API key" (401/403)
 
 **Cause:** Invalid, expired, or missing API key
 
@@ -610,15 +598,13 @@ Assets/
 
 ### Generation Failures
 
-#### Timeout Issues
+#### Long-Running Generations
 
-**Problem:** Generation takes longer than 10 minutes
+Generations run as jobs on Ludo's queue. While one runs, the status line shows "queued" or "running" and the elapsed time; the plugin waits up to 30 minutes.
 
-**Solutions:**
-- Reduce complexity (lower face count, smaller texture size)
-- Try again during off-peak hours
-- Simplify prompt
-- Check Ludo AI status page
+**If it gives up:** the message names the job. It may still finish - its result appears among your API generations. Try again, or reduce complexity (lower face count, smaller texture size, simpler prompt).
+
+**"Your generation queue is full":** up to 50 generations can be queued or running at once through the API. Wait for some to finish, then try again.
 
 #### Invalid Parameters
 
@@ -658,14 +644,9 @@ Assets/
 
 ### Asset Import Issues
 
-#### WebP Format Not Supported
+#### WebP Images
 
-**Problem:** Unity 2021.1 or earlier doesn't support WebP
-
-**Solutions:**
-- Update to Unity 2021.2+ (recommended)
-- Plugin includes WebP decoder fallback
-- Save as PNG instead
+The API delivers images as WebP, which Unity does not import. When you save an image or spritesheet, the plugin converts it to PNG with the bundled WebP decoder. If a conversion ever fails, the file is kept as `.webp` (with a Console warning) - convert it before use.
 
 #### GLB Import Problems
 
@@ -682,7 +663,7 @@ Assets/
 **Problem:** Audio file won't import
 
 **Solutions:**
-- Check supported formats (WAV, MP3, OGG)
+- Generated audio is saved as MP3, which Unity imports directly
 - Verify file isn't corrupted
 - Check file size isn't too large
 - Reimport asset
@@ -697,26 +678,6 @@ Assets/
 3. Verify dependencies are installed
 4. Restart Unity Editor
 
-#### Missing Dropdowns or Options
-
-**Problem:** Art styles or other dropdowns are empty
-
-**Solutions:**
-1. Ensure API key is set
-2. Plugin fetches options from API on startup
-3. Check console for API errors
-4. Restart plugin window
-
-#### Refresh Payload Failures
-
-**Problem:** "Cannot GET /api/refresh" error
-
-**Solutions:**
-- This is normal if endpoint changed
-- Plugin includes fallback default values
-- You can still use all features
-- Manually type custom values if needed
-
 ### Console Errors
 
 **Finding Error Details:**
@@ -727,9 +688,10 @@ All plugin operations log to Unity Console:
 3. Errors show HTTP status codes and details
 
 **Common Error Codes:**
-- **403**: Invalid API key → Check Settings
+- **400**: Invalid parameters → the message says which one
+- **401/403**: Invalid API key → Check Settings
 - **404**: Endpoint not found → Update plugin
-- **429**: Rate limited → Wait and retry
+- **429**: Generation queue full, or too many requests → Wait and retry
 - **500**: Server error → Try again later
 
 ---
@@ -804,11 +766,8 @@ A: The API key is stored locally in Unity EditorPrefs and never transmitted exce
 
 ### Feature Questions
 
-**Q: What's the difference between sprite and image generation?**  
-A: Sprite generation is optimized for game sprites with specific art styles and perspectives. Image generation is broader and includes screenshots, icons, UI assets, textures, and more with additional options like genre and platform.
-
 **Q: How long does generation take?**  
-A: Typically 10-60 seconds for sprites/images, 1-3 minutes for 3D models, and 10-30 seconds for audio. Complex requests may take longer (up to 10 minutes max).
+A: Typically 10-60 seconds for sprites/images, 1-3 minutes for 3D models, and 10-30 seconds for audio. Complex requests may take longer; the plugin waits up to 30 minutes.
 
 **Q: Can I generate multiple assets at once?**  
 A: Yes! Image generation supports batch generation (1-8 images). Other asset types generate one at a time.
@@ -1010,58 +969,27 @@ This ensures:
 | Batch Image Generation | 1-8 images |
 | 3D Model Face Count | 1,000-200,000 |
 | 3D Texture Size | 1024 or 2048 |
-| 3D Create / Rig / Animate Timeout | Up to 60 minutes |
-
-### Quality Settings
-
-| Setting | Use Case |
-|---------|----------|
-| Low Quality | Fast prototyping, placeholders |
-| Medium Quality | Balanced development |
-| High Quality | Final assets, production |
+| Generation wait (any job) | Up to 30 minutes |
 
 ---
 
 ## Appendix: Complete Option Lists
 
-### Art Styles (20 Options)
+### Art Styles (33 Options)
 
-1. Any style
-2. Cartoonish
-3. Pixel Art (16-Bit)
-4. Low Poly
-5. Stylized 3D
-6. Flat Design
-7. Illustration
-8. Cel-Shaded
-9. Retro 2D
-10. Voxel Art
-11. Minimalist
-12. Hand-Painted
-13. Anime/Manga
-14. Vector Art
-15. Chibi
-16. Retro 3D
-17. Comic Book
-18. Silhouette
-19. Pixel Art (8-Bit)
-20. Photorealistic 3D
+Any style, Cel-Shaded, Inked Painterly, Illustration, Western Cartoon, Anime/Manga, Chibi, 8-Bit, 16-Bit, 32-Bit, Hi-Bit, Retro 2D, Hand-Painted, Digital Painting, Comic Book, Block Print, Sketch, Watercolor, Stylized 3D, Pixar Style, Low Poly, Photorealistic 3D, Voxel Art, Retro 3D, Flat Design, Minimalist, Silhouette, Noir, Neon, Glitch Art, Claymation, Paper Craft, Textile
 
-### Perspectives (9 Options)
+### Perspectives (10 Options)
 
-1. Any perspective
-2. First-Person
-3. Third-Person
-4. Over-the-Shoulder
-5. Top-Down
-6. Isometric
-7. Side-Scroll
-8. Free Camera
-9. 2.5D
+Any perspective, Side-Scroll, Isometric, High Angle, Top-Down, 2.5D, First-Person, Third-Person, Over-the-Shoulder, Free Camera
 
-### Genres (23 Options)
+### Sprite Animation Models
 
-Hypercasual, Casual, Core, Action, Adventure, Arcade, Board, Card, Casino, Education, Family, Fighting, Games for Kids, Music, Puzzle, Racing, Role Playing, Shooter, Simulation, Sports, Strategy, Trivia, Word
+| Model | Best for | Durations |
+|-------|----------|-----------|
+| Hydra (default) | Most animations; also generates a sound effect | 3, 3.5, 4, 4.5, 5 s |
+| Forge | Basic animations and simple sprites, lower cost | 1 - 5 s (0.5 s steps) |
+| Forge Pixel | Low-res pixel art | 1 - 5 s (0.5 s steps) |
 
 ### Voice Presets (14 Options)
 
