@@ -357,6 +357,44 @@ public static class Scenarios
         c.CheckClean(p);
     }
 
+    // The gateway 502s and one response is lost after the job was created: retries must
+    // reuse the request_id so exactly one job (one charge) exists.
+    static void SubmitGatewayRetry(Ctx c)
+    {
+        var p = c.NewPlugin(new FakeLudoApi.Behavior { SubmitGatewayErrors = 1, LoseSubmitResponses = 1 });
+        c.Require(p.Has("submitRetryBaseSeconds"), "submits are not retried (field submitRetryBaseSeconds)");
+        p.Set("submitRetryBaseSeconds", 0.3f);
+        Tab(p, "Audio", "currentAudioTab", "SoundEffect");
+        p.Set("soundEffectDescription", "thunder");
+        p.Click("Generate Sound Effect");
+        c.Require(p.RunUntilIdle(30), "never finished after gateway errors: " + p.Status);
+        c.Check(!string.IsNullOrEmpty((string)PluginDriver.Prop(p.Get("currentSoundEffect"), "Url")), $"no result after transient 502s; status: '{p.Status}'; dialogs: {string.Join(" / ", p.Dialogs)}");
+        var posts = c.Api.Posts("/api/audio/sound-effect");
+        c.Check(posts.Count == 3, $"expected 3 submits (502, lost 502, ok), got {posts.Count}");
+        var ids = posts.Select(r => (string)r.Body?["request_id"]).Distinct().ToList();
+        c.Check(ids.Count == 1 && ids[0] != null, $"retries did not reuse one request_id: {string.Join(", ", ids)}");
+        c.Check(c.Api.JobsCreated == 1, $"{c.Api.JobsCreated} jobs created for one click");
+        c.CheckClean(p);
+
+        // A second click is a new generation: new request_id.
+        p.Click("Generate Sound Effect");
+        c.Require(p.RunUntilIdle(30), "second click never finished");
+        c.Check(c.Api.Posts("/api/audio/sound-effect").Select(r => (string)r.Body?["request_id"]).Distinct().Count() == 2, "second click reused the first click's request_id");
+    }
+
+    static void GatewayDown(Ctx c)
+    {
+        var p = c.NewPlugin(new FakeLudoApi.Behavior { SubmitGatewayErrors = 99 });
+        p.Set("submitRetryBaseSeconds", 0.2f);
+        Tab(p, "Audio", "currentAudioTab", "Music");
+        p.Set("musicDescription", "boss battle");
+        p.Click("Generate Music");
+        c.Require(p.RunUntilIdle(30), "stuck while the gateway is down: " + p.Status);
+        c.Check(c.Api.Posts().Count == 4, $"expected 4 attempts, got {c.Api.Posts().Count}");
+        var d = p.ErrorDialogs.FirstOrDefault();
+        c.Check(d != null && d.Message.Contains("temporarily unavailable") && !d.Message.Contains("<html"), $"outage message not readable: {d}");
+    }
+
     static void PollConnectionDrop(Ctx c)
     {
         var p = c.NewPlugin(new FakeLudoApi.Behavior { CloseSocketOnFirstPoll = true, PollsUntilDone = 2 });
@@ -544,6 +582,8 @@ public static class Scenarios
         new("failure", "poll 429: honours Retry-After, recovers", PollRateLimited),
         new("failure", "polling: long-polls and waits poll_after_ms", HonoursPollAfter),
         new("failure", "poll connection drop: recovers", PollConnectionDrop),
+        new("failure", "submit 502 / lost response: retried with one request_id, one job", SubmitGatewayRetry),
+        new("failure", "gateway down: readable message after retries", GatewayDown),
         new("failure", "job never finishes: progress, then timeout", LongJobShowsProgress),
         new("ui", "every screen renders", EveryScreenRenders),
         new("ui", "quiet when the user's own code logs errors", QuietOnUnrelatedErrors),

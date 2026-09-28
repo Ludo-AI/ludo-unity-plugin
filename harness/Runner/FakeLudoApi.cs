@@ -26,6 +26,8 @@ public class FakeLudoApi : IDisposable
         public int PollRateLimitOnce;           // 429 + Retry-After on the Nth poll (1-based), once
         public bool CloseSocketOnFirstPoll;     // drop the connection on the first poll
         public int ResultFileStatus = 200;      // status for downloaded result files
+        public int SubmitGatewayErrors;         // first N submits: load balancer 502, nothing created
+        public int LoseSubmitResponses;         // next N submits: job IS created, response lost as a 502
     }
 
     public class Request
@@ -62,6 +64,8 @@ public class FakeLudoApi : IDisposable
     readonly ConcurrentDictionary<string, Job> jobs = new();
     int nextJob;
     int pollCount;
+    int gatewayErrors, lostResponses;
+    public int JobsCreated => jobs.Count;
     bool socketDropped;
 
     public readonly string ApiKey = "test-key-123";
@@ -89,6 +93,8 @@ public class FakeLudoApi : IDisposable
         lock (Violations) Violations.Clear();
         jobs.Clear();
         pollCount = 0;
+        gatewayErrors = 0;
+        lostResponses = 0;
         socketDropped = false;
     }
 
@@ -183,6 +189,28 @@ public class FakeLudoApi : IDisposable
             await Json(ctx, rec, 400, new JsonObject { ["message"] = "Request validation failed: " + string.Join("; ", findings.Errors) });
             return;
         }
+        if (gatewayErrors < B.SubmitGatewayErrors)
+        {
+            gatewayErrors++;
+            await Html(ctx, rec, 502);
+            return;
+        }
+
+        // Like jobService.enqueue: (user, request_id) maps to one job; reuse for another operation is a 409.
+        string requestId = (string)body["request_id"];
+        var existing = requestId == null ? null : jobs.Values.FirstOrDefault(j => (string)j.Body["request_id"] == requestId);
+        if (existing != null)
+        {
+            if (existing.Path != api)
+            {
+                await Json(ctx, rec, 409, new JsonObject { ["message"] = $"request_id '{requestId}' was already used for a different operation.", ["code"] = "REQUEST_ID_IN_USE" });
+                return;
+            }
+            ctx.Response.AddHeader("X-Ludo-Job-Id", existing.Id);
+            await Json(ctx, rec, 202, Project(existing));
+            return;
+        }
+
         if (B.SubmitStatus != 0)
         {
             var err = new JsonObject { ["message"] = B.SubmitMessage ?? "Rejected" };
@@ -200,6 +228,12 @@ public class FakeLudoApi : IDisposable
             CreatedAt = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
         };
         jobs[job.Id] = job;
+        if (lostResponses < B.LoseSubmitResponses)
+        {
+            lostResponses++;
+            await Html(ctx, rec, 502);
+            return;
+        }
         ctx.Response.AddHeader("X-Ludo-Job-Id", job.Id);
 
         bool isAsync = body["async"] == null || (bool)body["async"];
@@ -377,6 +411,18 @@ public class FakeLudoApi : IDisposable
         {
             ".webp" => "image/webp", ".mp3" => "audio/mpeg", ".glb" => "model/gltf-binary", ".mp4" => "video/mp4", ".gif" => "image/gif", _ => "image/png",
         };
+        ctx.Response.ContentLength64 = bytes.Length;
+        await ctx.Response.OutputStream.WriteAsync(bytes);
+        ctx.Response.Close();
+    }
+
+    // What Google's load balancer answers when the backend is unreachable.
+    async Task Html(HttpListenerContext ctx, Request rec, int status)
+    {
+        rec.Status = status;
+        var bytes = Encoding.UTF8.GetBytes("<html><head><title>502 Server Error</title></head><body><h1>Error: Server Error</h1><h2>The server encountered a temporary error and could not complete your request.<p>Please try again in 30 seconds.</h2></body></html>");
+        ctx.Response.StatusCode = status;
+        ctx.Response.ContentType = "text/html; charset=UTF-8";
         ctx.Response.ContentLength64 = bytes.Length;
         await ctx.Response.OutputStream.WriteAsync(bytes);
         ctx.Response.Close();

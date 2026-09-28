@@ -1882,6 +1882,10 @@ public class LudoAIPlugin : EditorWindow
     private const int JobLongPollSeconds = 30;
     // Consecutive failed status polls (network, 5xx) tolerated before giving up.
     private const int MaxConsecutivePollFailures = 5;
+    // Submits that hit a gateway error or a dropped connection are retried this many times,
+    // waiting submitRetryBaseSeconds x attempt in between (5 + 10 + 15 s).
+    private const int MaxSubmitAttempts = 4;
+    private float submitRetryBaseSeconds = 5f;
 
     private class EditorHttpResult
     {
@@ -1898,14 +1902,39 @@ public class LudoAIPlugin : EditorWindow
     private IEnumerator RunApiJob(string endpoint, Dictionary<string, object> payload, string progressLabel, EditorHttpResult result)
     {
         string fullUrl = apiUrl + endpoint;
+
+        // The API treats request_id as an idempotency key: re-sending it returns the job
+        // already created instead of generating (and charging) again. That makes a submit
+        // whose response was lost safe to retry.
+        if (!payload.ContainsKey("request_id"))
+        {
+            payload["request_id"] = "unity-" + Guid.NewGuid().ToString("N");
+        }
+
         var settings = new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore };
         string jsonData = JsonConvert.SerializeObject(payload, settings);
-        Debug.Log($"[LudoAIPlugin] POST {fullUrl} ({Encoding.UTF8.GetByteCount(jsonData)} bytes)");
+        Debug.Log($"[LudoAIPlugin] POST {fullUrl} ({Encoding.UTF8.GetByteCount(jsonData)} bytes, request_id {payload["request_id"]})");
 
         // HttpClient rather than UnityWebRequest: UnityWebRequest often fails with HTTP 0 /
         // "Unknown Error" on large base64 JSON uploads (3D models, images from disk).
         var submit = new EditorHttpResult();
-        yield return SendJsonWithHttpClient(HttpMethod.Post, fullUrl, jsonData, 600, submit);
+        for (int attempt = 1; ; attempt++)
+        {
+            submit = new EditorHttpResult();
+            yield return SendJsonWithHttpClient(HttpMethod.Post, fullUrl, jsonData, 600, submit);
+
+            bool transient = !submit.Success && (submit.StatusCode == 0 || submit.StatusCode == 502 || submit.StatusCode == 503 || submit.StatusCode == 504);
+            if (!transient || attempt >= MaxSubmitAttempts)
+            {
+                break;
+            }
+
+            float delay = submit.RetryAfterSeconds > 0 ? submit.RetryAfterSeconds : submitRetryBaseSeconds * attempt;
+            Debug.LogWarning($"[LudoAIPlugin] Submit to {endpoint} failed ({(submit.StatusCode == 0 ? submit.Error : "HTTP " + submit.StatusCode)}), retrying in {delay:F0}s");
+            statusMessage = $"{progressLabel}... the server is busy, retrying in {delay:F0}s";
+            Repaint();
+            yield return new EditorWaitForSeconds(delay);
+        }
 
         if (!submit.Success)
         {
@@ -2107,9 +2136,17 @@ public class LudoAIPlugin : EditorWindow
         // Prefer the API's own explanation ({"message": ...}) over the bare status line.
         string reason = null;
         string extra = null;
-        if (!string.IsNullOrEmpty(result.Body))
+        string trimmed = string.IsNullOrEmpty(result.Body) ? "" : result.Body.Trim();
+        if (trimmed.StartsWith("<"))
         {
-            string body = result.Body.Trim();
+            // An HTML error page from a proxy/load balancer, not the API itself.
+            reason = result.StatusCode >= 500
+                ? "The Ludo AI server is temporarily unavailable. Please try again in a minute."
+                : result.Error;
+        }
+        else if (trimmed.Length > 0)
+        {
+            string body = trimmed;
             try
             {
                 JObject err = JObject.Parse(body);
