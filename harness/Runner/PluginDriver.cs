@@ -40,7 +40,11 @@ public class PluginDriver
         Invoke("OnEnable");
     }
 
-    public void Close() => Invoke("OnDisable");
+    // Unity sends OnDisable only to windows that define it.
+    public void Close()
+    {
+        if (windowType.GetMethod("OnDisable", All) != null) Invoke("OnDisable");
+    }
 
     public bool Has(string field) => windowType.GetField(field, All) != null;
 

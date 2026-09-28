@@ -361,6 +361,20 @@ public static class Scenarios
         c.Check(Harness.Buttons.Contains("Save API Key"), "key screen missing without an API key");
     }
 
+    // With the window open, errors from the user's own code must not make the plugin
+    // chatter in the console or touch its state.
+    static void QuietOnUnrelatedErrors(Ctx c)
+    {
+        var p = c.NewPlugin();
+        p.Gui();
+        int before = Harness.Logs.Count;
+        UnityEngine.Debug.LogError("Assets/Game/Player.cs(12,5): error CS0103: The name 'speed' does not exist in the current context");
+        UnityEngine.Debug.LogError("NullReferenceException: Object reference not set to an instance of an object");
+        var chatter = Harness.Logs.Skip(before).Where(l => l.Message.Contains("[LudoAIPlugin]")).ToList();
+        c.Check(chatter.Count == 0, $"plugin reacted to unrelated console errors: {string.Join(" | ", chatter.Select(l => l.Message))}");
+        p.Close();
+    }
+
     // Every dropdown that feeds an API field may only offer values the API accepts.
     static readonly (string field, string path, string param)[] OptionArrays =
     {
@@ -481,6 +495,7 @@ public static class Scenarios
         new("failure", "poll connection drop: recovers", PollConnectionDrop),
         new("failure", "job never finishes: progress, then timeout", LongJobShowsProgress),
         new("ui", "every screen renders", EveryScreenRenders),
+        new("ui", "quiet when the user's own code logs errors", QuietOnUnrelatedErrors),
         new("ui", "dropdowns only offer values the API accepts", DropdownsMatchContract),
         new("ui", "animate: every model x duration is accepted", AnimateModelDurationSweep),
         new("ui", "animate: margin modes (auto / none / manual per-axis)", AnimateMargins),
