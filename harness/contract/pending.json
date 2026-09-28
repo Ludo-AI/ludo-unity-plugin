@@ -1,0 +1,14 @@
+{
+  "_comment": "Fields the plugin already sends that are merged in the backend's swagger.yaml on dev but not yet in the published openapi-public.json (generate:mcp pending). The harness validates against the snapshot plus these, and says so in its output. Delete an entry once contract/sync.sh brings it in.",
+  "fields": [
+    {
+      "schema": "Create3DModelPayload",
+      "property": "back_image",
+      "definition": {
+        "type": "string",
+        "description": "Optional URL or base64-encoded image of the SAME subject seen from behind (rotated 180 degrees from image). No extra cost."
+      },
+      "source": "prometheus-server b6df149d (origin/dev), 2026-09-28"
+    }
+  ]
+}

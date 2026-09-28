@@ -107,6 +107,7 @@ public class LudoAIPlugin : EditorWindow
 
     // 3D Model Generation Variables
     private string model3DImageUrl = "";
+    private string model3DBackImageUrl = ""; // optional back view (same subject, rotated 180 degrees)
     private int model3DTargetFaces = 50000;
     private int model3DTextureSize = 2048;
     private string model3DTextureType = "pbr";
@@ -462,6 +463,36 @@ public class LudoAIPlugin : EditorWindow
         GUILayout.EndHorizontal();
         
         model3DImageUrl = EditorGUILayout.TextField(model3DImageUrl);
+
+        GUILayout.Space(10);
+
+        // Optional back view: the model's back follows it instead of being invented
+        GUILayout.BeginHorizontal();
+        GUILayout.Label("Back View (optional):");
+        if (GUILayout.Button("Select Back View", GUILayout.Width(150)))
+        {
+            string path = EditorUtility.OpenFilePanel("Select Back View Image", "Assets", "png,jpg,jpeg,webp");
+            if (!string.IsNullOrEmpty(path))
+            {
+                string dataUri = LoadImageFileAsDataUri(path);
+                if (!string.IsNullOrEmpty(dataUri))
+                {
+                    model3DBackImageUrl = dataUri;
+                    statusMessage = "Back view loaded from project (normalized for API)";
+                    Debug.Log($"[LudoAIPlugin] Loaded back view from: {path}");
+                }
+            }
+        }
+        GUI.enabled = !string.IsNullOrEmpty(model3DBackImageUrl);
+        if (GUILayout.Button("Clear", GUILayout.Width(60)))
+        {
+            model3DBackImageUrl = "";
+        }
+        GUI.enabled = true;
+        GUILayout.EndHorizontal();
+
+        model3DBackImageUrl = EditorGUILayout.TextField(model3DBackImageUrl);
+        GUILayout.Label("The same subject seen from behind, at the same scale, pose and style. Only a back view works: a side or three-quarter view distorts the model. No extra cost.", EditorStyles.helpBox);
 
         GUILayout.Space(10);
 
@@ -1773,7 +1804,20 @@ public class LudoAIPlugin : EditorWindow
             ["texture_type"] = model3DTextureType
         };
 
-        Debug.Log($"[LudoAIPlugin] 3D Model creation request (faces={model3DTargetFaces}, texture={model3DTextureSize}, type={model3DTextureType}, image_chars={normalizedImage.Length})");
+        if (!string.IsNullOrEmpty(model3DBackImageUrl))
+        {
+            string normalizedBack = NormalizeImageInputForApi(model3DBackImageUrl);
+            if (string.IsNullOrEmpty(normalizedBack))
+            {
+                statusMessage = "Failed to prepare the back view image for 3D generation.";
+                EditorUtility.DisplayDialog("3D Model Creation Error", statusMessage, "OK");
+                isProcessing = false;
+                yield break;
+            }
+            requestData["back_image"] = normalizedBack;
+        }
+
+        Debug.Log($"[LudoAIPlugin] 3D Model creation request (faces={model3DTargetFaces}, texture={model3DTextureSize}, type={model3DTextureType}, image_chars={normalizedImage.Length}, back_view={requestData.ContainsKey("back_image")})");
 
         var job = new EditorHttpResult();
         yield return RunApiJob("/assets/3d-model", requestData, "Creating 3D model", job);

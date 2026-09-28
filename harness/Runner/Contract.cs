@@ -13,9 +13,22 @@ public class Contract
 {
     readonly JsonObject spec;
 
+    public readonly List<string> PendingFields = new();
+
     public Contract(string path)
     {
         spec = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+        // contract/pending.json: fields merged in the backend but not yet in the published spec.
+        string pending = Path.Combine(Path.GetDirectoryName(path)!, "pending.json");
+        if (!File.Exists(pending)) return;
+        foreach (var f in JsonNode.Parse(File.ReadAllText(pending))!["fields"]!.AsArray())
+        {
+            var props = Schema((string)f!["schema"])["properties"]!.AsObject();
+            string name = (string)f["property"];
+            if (props.ContainsKey(name)) continue; // already published: the entry can go
+            props[name] = f["definition"]!.DeepClone();
+            PendingFields.Add($"{f["schema"]}.{name} ({f["source"]})");
+        }
     }
 
     public JsonObject Schema(string name) => spec["components"]!["schemas"]![name]!.AsObject();

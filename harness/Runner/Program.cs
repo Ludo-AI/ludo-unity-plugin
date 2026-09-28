@@ -42,6 +42,7 @@ public static class Program
         Console.WriteLine($"plugin   {plugin} ({File.GetLastWriteTime(plugin):yyyy-MM-dd HH:mm})");
         Console.WriteLine($"api      {(live ? "LIVE " : "fake ")}{apiUrl}");
         Console.WriteLine($"output   {outRoot}");
+        foreach (var f in contract.PendingFields) Console.WriteLine($"pending  {f} - not in the published spec yet");
         Console.WriteLine();
 
         int passed = 0, failed = 0;

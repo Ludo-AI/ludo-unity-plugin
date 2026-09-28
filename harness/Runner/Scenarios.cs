@@ -227,6 +227,42 @@ public static class Scenarios
         foreach (var f in after) c.Check(Sniff(File.ReadAllBytes(f)) == "glb", $"{Path.GetFileName(f)} is not a GLB");
     }
 
+    // Back view: pasted URL, or picked from the project (normalised like the front image).
+    static void Model3DBackView(Ctx c)
+    {
+        var p = c.NewPlugin();
+        c.Require(p.Has("model3DBackImageUrl"), "no back view input (field model3DBackImageUrl)");
+        Tab(p, "Models", "currentModelTab", "Create");
+        p.Set("model3DImageUrl", FakeFile(c, "front.png"));
+
+        // 1. no back view: the field is not sent at all
+        p.Click("Create 3D Model");
+        c.Require(p.RunUntilIdle(30), "3D creation never finished: " + p.Status);
+        c.Check(LastBody(c, "/assets/3d-model")?["back_image"] == null, "back_image sent although none was chosen");
+
+        // 2. a pasted URL goes through as-is
+        p.Set("model3DBackImageUrl", FakeFile(c, "back.png"));
+        p.Click("Create 3D Model");
+        c.Require(p.RunUntilIdle(30), "3D creation with back view never finished: " + p.Status);
+        c.Check((string)LastBody(c, "/assets/3d-model")?["back_image"] == FakeFile(c, "back.png"), "pasted back view URL not sent as back_image");
+
+        // 3. picked from the project: becomes a PNG data URI
+        string file = Path.Combine(c.OutDir, "back-view.png");
+        File.WriteAllBytes(file, UnityEngine.FakeImage.Png(512, 512));
+        Harness.OpenFilePanel = (title, ext) => title.Contains("Back") ? file : "";
+        p.Click("Select Back View");
+        c.Check(p.Get<string>("model3DBackImageUrl").StartsWith("data:image/png;base64,"), $"picked back view not loaded as a data URI: {p.Get<string>("model3DBackImageUrl")?.Substring(0, Math.Min(40, p.Get<string>("model3DBackImageUrl")?.Length ?? 0))}");
+        p.Click("Create 3D Model");
+        c.Require(p.RunUntilIdle(30), "3D creation with picked back view never finished: " + p.Status);
+        c.Check(((string)LastBody(c, "/assets/3d-model")?["back_image"] ?? "").StartsWith("data:image/png;base64,"), "picked back view not sent as a PNG data URI");
+        c.Check(!string.IsNullOrEmpty((string)PluginDriver.Prop(p.Get("current3DModel"), "ModelUrl")), "no model with a back view");
+
+        // 4. Clear removes it
+        p.Click("Clear");
+        c.Check(string.IsNullOrEmpty(p.Get<string>("model3DBackImageUrl")), "'Clear' left the back view set");
+        c.CheckClean(p, "/assets/3d-model");
+    }
+
     static void Audio(Ctx c, string sub, string path, Action<PluginDriver> fill, string generate, string resultField, string save)
     {
         var p = c.NewPlugin();
@@ -495,6 +531,7 @@ public static class Scenarios
         new("generate", "images: generate 2, preview, save, select", Images, LiveToo: true),
         new("generate", "sprite animation: animate, preview, save", AnimateSprite, LiveToo: true),
         new("generate", "3D: create -> rig -> animate, with downloads", Model3DChain, LiveToo: true),
+        new("generate", "3D: optional back view (URL, from project, clear)", Model3DBackView),
         new("generate", "audio: sound effect", c => Audio(c, "SoundEffect", "/audio/sound-effect", p => { p.Set("soundEffectDescription", "sword clash"); p.Set("soundEffectDuration", 2f); }, "Generate Sound Effect", "currentSoundEffect", "Save Sound Effect"), LiveToo: true),
         new("generate", "audio: music", c => Audio(c, "Music", "/audio/music", p => p.Set("musicDescription", "calm village theme"), "Generate Music", "currentMusic", "Save Music"), LiveToo: true),
         new("generate", "audio: voice", c => Audio(c, "Voice", "/audio/voice", p => { p.Set("voiceDescription", "old wizard"); p.Set("voiceText", "You shall not pass"); }, "Generate Voice", "currentVoice", "Save Voice"), LiveToo: true),
