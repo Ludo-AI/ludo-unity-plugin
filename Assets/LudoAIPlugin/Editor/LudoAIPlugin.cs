@@ -2905,9 +2905,13 @@ public class LudoAIPlugin : EditorWindow
             {
                 SaveSpritesheetToFile(currentSpritesheet);
             }
-            if (GUILayout.Button("Save GIF Preview", GUILayout.Height(30)))
+            if (!string.IsNullOrEmpty(currentSpritesheet.GifB64) && GUILayout.Button("Save GIF Preview", GUILayout.Height(30)))
             {
                 SaveGifToFile(currentSpritesheet);
+            }
+            if (!string.IsNullOrEmpty(currentSpritesheet.AudioUrl) && GUILayout.Button("Save Sound Effect", GUILayout.Height(30)))
+            {
+                SaveGeneratedAudioToFile(new GeneratedAudio { Url = currentSpritesheet.AudioUrl }, "SpriteSound");
             }
             GUILayout.EndHorizontal();
 
@@ -3379,6 +3383,7 @@ public class LudoAIPlugin : EditorWindow
                     SpriteSheetB64 = animatedResponse.SpritesheetUrl,
                     Video = new VideoInfo { Url = animatedResponse.VideoUrl },
                     GifB64 = animatedResponse.GifUrl,
+                    AudioUrl = animatedResponse.AudioUrl,
                     NumFrames = animatedResponse.NumFrames,
                     TargetFrameSize = spritesheetFrameSize,
                     Loop = spritesheetLoop,
@@ -4620,25 +4625,8 @@ public class LudoAIPlugin : EditorWindow
         }
         else
         {
-            byte[] imageData = www.downloadHandler.data;
-            byte[] finalData = null;
-            string extension = "png";
-            
-            Texture2D texture = new Texture2D(2, 2);
-            if (texture.LoadImage(imageData))
-            {
-                // Successfully loaded, convert to PNG
-                finalData = texture.EncodeToPNG();
-                extension = "png";
-                Debug.Log($"[LudoAIPlugin] Successfully converted spritesheet to PNG format.");
-            }
-            else
-            {
-                // If conversion fails, save as original format
-                finalData = imageData;
-                extension = spritesheet.SpriteSheetB64.EndsWith(".webp", System.StringComparison.OrdinalIgnoreCase) ? "png" : "png";  // Force PNG extension even for WebP data
-                Debug.LogWarning($"[LudoAIPlugin] Could not convert spritesheet. Saving as {extension.ToUpper()}.");
-            }
+            string extension;
+            byte[] finalData = ConvertImageForUnity(www.downloadHandler.data, spritesheet.SpriteSheetB64, out extension);
 
             string fileName = $"Spritesheet_{spritesheet.Id}_{DateTime.Now:yyyyMMdd_HHmmss}.{extension}";
             string savePath = EditorUtility.SaveFilePanel("Save Spritesheet", "Assets", fileName, extension);
@@ -4657,24 +4645,8 @@ public class LudoAIPlugin : EditorWindow
     {
         if (spritesheet == null || string.IsNullOrEmpty(spritesheet.GifB64)) return;
 
-        try
-        {
-            byte[] bytes = Convert.FromBase64String(spritesheet.GifB64);
-            string fileName = $"Preview_{spritesheet.Id}_{DateTime.Now:yyyyMMdd_HHmmss}.gif";
-            string savePath = EditorUtility.SaveFilePanel("Save GIF Preview", "Assets", fileName, "gif");
-
-            if (!string.IsNullOrEmpty(savePath))
-            {
-                File.WriteAllBytes(savePath, bytes);
-                Debug.Log($"[LudoAIPlugin] GIF preview saved to: {savePath}");
-                EditorUtility.DisplayDialog("Success", $"GIF preview saved successfully to:\n{savePath}", "OK");
-            }
-        }
-        catch (Exception e)
-        {
-            Debug.LogError($"[LudoAIPlugin] Failed to save GIF: {e.Message}");
-            EditorUtility.DisplayDialog("Save Error", $"Failed to save GIF: {e.Message}", "OK");
-        }
+        // GifB64 holds the gif_url returned by the API
+        EditorCoroutineUtility.StartCoroutineOwnerless(DownloadAndSaveFile(spritesheet.GifB64, "Save GIF Preview", $"Preview_{DateTime.Now:yyyyMMdd_HHmmss}", "gif", "GIF preview"));
     }
 
     // ============================
@@ -4703,9 +4675,10 @@ public class LudoAIPlugin : EditorWindow
 
         try
         {
-            byte[] imageData = www.downloadHandler.data;
-            string fileName = $"GeneratedImage_{DateTime.Now:yyyyMMdd_HHmmss}.png";
-            string savePath = EditorUtility.SaveFilePanel("Save Image", "Assets", fileName, "png");
+            string extension;
+            byte[] imageData = ConvertImageForUnity(www.downloadHandler.data, image.Url, out extension);
+            string fileName = $"GeneratedImage_{DateTime.Now:yyyyMMdd_HHmmss}.{extension}";
+            string savePath = EditorUtility.SaveFilePanel("Save Image", "Assets", fileName, extension);
 
             if (!string.IsNullOrEmpty(savePath))
             {
@@ -5151,40 +5124,81 @@ public class LudoAIPlugin : EditorWindow
 
     private IEnumerator DownloadAndSaveGeneratedAudio(GeneratedAudio audio, string defaultName)
     {
-        UnityWebRequest www = UnityWebRequest.Get(audio.Url);
+        // The API returns MP3; keep the URL's extension so Unity imports it as what it is.
+        string extension = ExtensionFromUrl(audio.Url, "mp3");
+        yield return DownloadAndSaveFile(audio.Url, "Save Audio", $"{defaultName}_{DateTime.Now:yyyyMMdd_HHmmss}", extension, "Audio");
+    }
+
+    // Downloads `url` and saves it unchanged wherever the user picks.
+    private IEnumerator DownloadAndSaveFile(string url, string dialogTitle, string baseName, string extension, string what)
+    {
+        UnityWebRequest www = UnityWebRequest.Get(url);
         www.SetRequestHeader("x-ludo-tool", "unity");
         yield return www.SendWebRequest();
 
         if (www.result != UnityWebRequest.Result.Success)
         {
-            Debug.LogError($"[LudoAIPlugin] Failed to download audio: {www.error}");
-            EditorUtility.DisplayDialog("Download Error", $"Failed to download audio: {www.error}", "OK");
+            Debug.LogError($"[LudoAIPlugin] Failed to download {what}: {www.error}");
+            EditorUtility.DisplayDialog("Download Error", $"Failed to download {what}: {www.error}", "OK");
             yield break;
         }
 
         try
         {
-            byte[] audioData = www.downloadHandler.data;
-            string fileName = $"{defaultName}_{DateTime.Now:yyyyMMdd_HHmmss}.wav";
-            string savePath = EditorUtility.SaveFilePanel("Save Audio", "Assets", fileName, "wav");
+            string savePath = EditorUtility.SaveFilePanel(dialogTitle, "Assets", $"{baseName}.{extension}", extension);
 
             if (!string.IsNullOrEmpty(savePath))
             {
-                File.WriteAllBytes(savePath, audioData);
-                
+                File.WriteAllBytes(savePath, www.downloadHandler.data);
+
                 if (savePath.StartsWith(Application.dataPath))
                 {
                     AssetDatabase.Refresh();
                 }
-                
-                Debug.Log($"[LudoAIPlugin] Audio saved to: {savePath}");
-                EditorUtility.DisplayDialog("Success", $"Audio saved successfully to:\n{savePath}", "OK");
+
+                Debug.Log($"[LudoAIPlugin] {what} saved to: {savePath}");
+                EditorUtility.DisplayDialog("Success", $"{what} saved successfully to:\n{savePath}", "OK");
             }
         }
         catch (Exception e)
         {
-            Debug.LogError($"[LudoAIPlugin] Failed to save audio: {e.Message}");
-            EditorUtility.DisplayDialog("Save Error", $"Failed to save audio: {e.Message}", "OK");
+            Debug.LogError($"[LudoAIPlugin] Failed to save {what}: {e.Message}");
+            EditorUtility.DisplayDialog("Save Error", $"Failed to save {what}: {e.Message}", "OK");
+        }
+    }
+
+    // Generated images arrive as WebP, which Unity does not import; decode (unity.webp)
+    // and re-encode as PNG. If that fails, keep the original bytes under their real
+    // extension rather than mislabel them.
+    private byte[] ConvertImageForUnity(byte[] imageData, string url, out string extension)
+    {
+        Texture2D texture = DecodeImageBytesToTexture(imageData);
+        if (texture != null)
+        {
+            byte[] png = texture.EncodeToPNG();
+            UnityEngine.Object.DestroyImmediate(texture);
+            if (png != null && png.Length > 0)
+            {
+                extension = "png";
+                return png;
+            }
+        }
+
+        extension = ExtensionFromUrl(url, "webp");
+        Debug.LogWarning($"[LudoAIPlugin] Could not convert the image to PNG; saving it as .{extension}. Unity cannot import WebP; convert it before use.");
+        return imageData;
+    }
+
+    private static string ExtensionFromUrl(string url, string fallback)
+    {
+        try
+        {
+            string ext = Path.GetExtension(new Uri(url).AbsolutePath).TrimStart('.').ToLowerInvariant();
+            return string.IsNullOrEmpty(ext) ? fallback : ext;
+        }
+        catch (Exception)
+        {
+            return fallback;
         }
     }
 
@@ -5351,6 +5365,9 @@ public class LudoAIPlugin : EditorWindow
 
         [JsonProperty("video")]
         public VideoInfo Video { get; set; }
+
+        [JsonProperty("audio_url")]
+        public string AudioUrl { get; set; }
     }
 
     [Serializable]

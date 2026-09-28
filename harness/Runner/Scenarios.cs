@@ -141,6 +141,8 @@ public static class Scenarios
         p.Set("spritesheetInitialImageUrl", c.Live ? LiveState.ImageUrl : FakeFile(c, "input-knight.webp"));
         c.Require(!string.IsNullOrEmpty(p.Get<string>("spritesheetInitialImageUrl")), "no input image (live: run images first)");
         p.Set("spritesheetMotionHint", "walking");
+        bool gif = p.Has("spritesheetGif");
+        if (gif) p.Set("spritesheetGif", true);
         p.Click("Animate Sprite");
         c.Require(p.RunUntilIdle(c.Live ? 900 : 30), "animation never finished: " + p.Status);
         var sheet = p.Get("currentSpritesheet");
@@ -156,8 +158,10 @@ public static class Scenarios
         }
         c.CheckClean(p, "/assets/sprite/animate");
         ClickSave(c, p, "Save Spritesheet", "image");
-        foreach (var label in new[] { "Save GIF Preview" })
-            if (ButtonShown(p, label)) ClickSave(c, p, label, "gif");
+        if (gif || ButtonShown(p, "Save GIF Preview")) ClickSave(c, p, "Save GIF Preview", "gif");
+        bool hydra = (string)body?["model"] is null or "hydra";
+        if (!c.Live && hydra) c.Check(ButtonShown(p, "Save Sound Effect"), "hydra returned a sound effect but there is no button to save it");
+        if (ButtonShown(p, "Save Sound Effect")) ClickSave(c, p, "Save Sound Effect", "mp3");
     }
 
     static void AnimateMargins(Ctx c)
