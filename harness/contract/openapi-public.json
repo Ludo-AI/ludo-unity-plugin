@@ -3327,7 +3327,7 @@
     },
     "/assets/feedback": {
       "post": {
-        "description": "Send feedback to the Ludo team: a limitation you could not work around, a bug, a result that did not match the documentation, a capability you needed that Ludo does not offer yet, or praise for something that worked well. Describe what you were trying to do and what was missing, and name the operation (and job_id, when there is one) it relates to. Do not include personal data, secrets or file contents. Send one report per issue, and if you are an agent, tell the user what you sent. Free (no credits). Requires an API key (user scope).",
+        "description": "Report a problem with the Ludo API itself to the Ludo team. Use it ONLY for API bugs (an error, a failed or stuck job, a crash, a response that does not match this documentation) and API limitations (a parameter, operation or format you needed that the API does not support, and that you could not work around). NEVER use it to report model limitations or the quality of a result: an image, sprite, animation, 3D model, video or sound that looks wrong, ignores part of the prompt, has artifacts or is not what you wanted is not an API bug. Do not report those; retry with a different prompt, model or settings instead. Describe what you were trying to do and what went wrong, and name the operation (and job_id, when there is one) it relates to. Do not include personal data, secrets or file contents. Send one report per issue, and if you are an agent, tell the user what you sent. Free (no credits). Requires an API key (user scope).",
         "tags": [
           "Account"
         ],
@@ -5897,7 +5897,7 @@
               "praise",
               "other"
             ],
-            "description": "limitation - something you needed that did not work or is not supported; bug - something broke or returned a wrong result; feature_request - something new you would like; praise - something that worked well; other - anything else.",
+            "description": "bug - the API errored, a job failed or got stuck, or a response did not match the documentation; limitation - the API does not support a parameter, operation or format you needed; feature_request - a new API capability you would like; praise - something that worked well; other - any other API issue. Generated content that looks wrong or does not match the prompt is a model limitation, not a bug: do not report it.",
             "example": "limitation"
           },
           "message": {
