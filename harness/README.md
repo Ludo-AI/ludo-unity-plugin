@@ -50,3 +50,17 @@ Starts from the current package in the repo root (keeping every GUID), swaps in
 what changed under `Assets/`, and verifies the result byte for byte. Then
 `git rm` the old package, tag `vX.Y.Z` and attach the new one to a GitHub Release.
 Older packages live in git history and in the Releases.
+
+### The version number
+
+`LudoAIPlugin.PluginVersion` is the plugin's version; it is sent on every API
+request (`x-ludo-tool-version`) and shows up as `tool_version` on the backend's
+`api-call` events, which is how we see which builds are still in use. Bump it
+(plus the README "What's New" and download link) with the first change under
+`Assets/` after each release. `tools/check-version.py` enforces this, and runs
+from `harness/run.sh` and from the pre-commit hook. The hook is local git config,
+so enable it once per clone:
+
+    git config core.hooksPath .githooks
+
+Before tagging a release run `git fetch --tags && python3 tools/check-version.py --release`.

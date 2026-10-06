@@ -18,6 +18,11 @@ public class LudoAIPlugin : EditorWindow
     // ============================
     // ======= CONFIGURATION =======
     // ============================
+    // Release version, sent on every API request as x-ludo-tool-version so Ludo can see
+    // which builds are still in use. Bump it with every change under Assets/ (and the
+    // README and package name to match): tools/check-version.py enforces this.
+    public const string PluginVersion = "1.0.4";
+
     // API key and URL for making requests to Ludo AI
     private string apiKey = ""; // API key loaded from EditorPrefs - user must input their own key
     private string apiUrl = "https://api.ludo.ai/api"; // Base URL for the API
@@ -2087,6 +2092,7 @@ public class LudoAIPlugin : EditorWindow
                     {
                         request.Headers.TryAddWithoutValidation("Authorization", "ApiKey " + authKey);
                         request.Headers.TryAddWithoutValidation("x-ludo-tool", "unity");
+                        request.Headers.TryAddWithoutValidation("x-ludo-tool-version", PluginVersion);
                         if (jsonBody != null)
                         {
                             request.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");

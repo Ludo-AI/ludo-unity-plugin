@@ -10,6 +10,9 @@ here="$(cd "$(dirname "$0")" && pwd)"
 ref=""
 if [ "$1" = "--ref" ]; then ref="$2"; shift 2; fi
 
+# The version check is about the working tree; a --ref run tests an old build.
+[ -n "$ref" ] || python3 "$here/../tools/check-version.py"
+
 out="$(mktemp -d)"
 if [ -n "$ref" ]; then
   src="$out/LudoAIPlugin.cs"

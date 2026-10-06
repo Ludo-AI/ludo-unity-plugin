@@ -35,6 +35,7 @@ public static class Program
         else
         {
             api = new FakeLudoApi(contract);
+            api.RequireToolVersion = PluginDriver.PluginAssembly.GetType("LudoAIPlugin")?.GetField("PluginVersion") != null;
             apiUrl = api.BaseUrl;
             apiKey = api.ApiKey;
         }

@@ -69,6 +69,8 @@ public class FakeLudoApi : IDisposable
     bool socketDropped;
 
     public readonly string ApiKey = "test-key-123";
+    // Builds from before 1.0.4 (run.sh --ref) have no PluginVersion and send no version header.
+    public bool RequireToolVersion;
     public Behavior B = new();
     public readonly List<Request> Requests = new();
     public readonly List<string> Violations = new();   // client broke the contract
@@ -149,6 +151,8 @@ public class FakeLudoApi : IDisposable
             }
             if (req.Headers["x-ludo-tool"] != "unity")
                 lock (Violations) Violations.Add($"{req.HttpMethod} {path} without x-ludo-tool: unity");
+            if (RequireToolVersion && string.IsNullOrEmpty(req.Headers["x-ludo-tool-version"]))
+                lock (Violations) Violations.Add($"{req.HttpMethod} {path} without x-ludo-tool-version");
 
             string api = path.StartsWith("/api/") ? path.Substring(4) : path;
 

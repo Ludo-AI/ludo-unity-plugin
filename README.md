@@ -7,6 +7,10 @@
 
 ---
 
+## What's New in 1.0.4
+
+- **The plugin now tells Ludo which version it is** (an `x-ludo-tool-version` header on every API request), so we can tell when older builds are still in use. No change to what you see or generate.
+
 ## What's New in 1.0.3
 
 - **Works with the current Ludo AI API.** Generations now run as jobs on Ludo's queue: the plugin submits the job, shows its progress (queued / running and elapsed time) and picks up the result when it's ready. Version 1.0.2 stopped working when the API switched to jobs on September 10, 2026 - please update.
@@ -96,7 +100,7 @@ The **Ludo AI Plugin** is a Unity Editor extension that integrates AI-powered as
 
 ### Step 1: Install the Plugin
 
-1. Download **`LudoAI_Plugin_1.0.3.unitypackage`** from the [latest release](https://github.com/Ludo-AI/ludo-unity-plugin/releases/latest)
+1. Download **`LudoAI_Plugin_1.0.4.unitypackage`** from the [latest release](https://github.com/Ludo-AI/ludo-unity-plugin/releases/latest)
 2. In Unity: **Assets** → **Import Package** → **Custom Package...**, pick the file, and click **Import** (or double-click the file with your project open)
 3. Everything lands in `Assets/LudoAIPlugin/`, dependencies included (Editor Coroutines, Newtonsoft.Json, WebP decoder)
 
