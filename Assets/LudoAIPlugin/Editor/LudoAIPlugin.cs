@@ -148,19 +148,27 @@ public class LudoAIPlugin : EditorWindow
     private bool musicAugment = true;
     private GeneratedAudio currentMusic = null;
 
+    // Server limits (API audio round): over-limit text is a 400, never truncated.
+    private const int VoiceTextMax = 100;
+    private const int SpeechTextMax = 250;
+    private const int DeliveryMax = 50;
+
     private string voiceDescription = "";
     private string voiceText = "";
+    private string voiceImage = "";
     private string voiceType = "human";
     private bool voiceAugment = true;
     private GeneratedAudio currentVoice = null;
 
     private string speechText = "";
     private string speechSample = "";
+    private string speechDelivery = "";
     private GeneratedAudio currentSpeech = null;
 
     private string speechPresetText = "";
     private string speechPresetVoiceId = "Serious woman";
     private string speechPresetEmotion = "Default";
+    private string speechPresetDelivery = "";
     private string speechPresetLanguage = "auto";
     private GeneratedAudio currentSpeechPreset = null;
 
@@ -198,9 +206,12 @@ public class LudoAIPlugin : EditorWindow
     private readonly string[] model3DAnimateModeLabels = { "Rotation + Translation", "Rotation Only (retargeting)" };
     
     private readonly string[] voiceTypeOptions = { "human", "non-human" };
-    private readonly string[] voicePresetOptions = { "Serious woman", "Wise woman", "Calm woman", "Fast-paced woman", "Calm young girl", "Expressive teen girl", "Calm teen girl", "Sweet girl", "Patient man", "Determined man", "Young elegant man", "Teen boy", "Friendly man", "Deep voice man" };
+    // Two voice families (API 0.x audio round): descriptive voices take `emotion`, first-name voices take `delivery`.
+    private readonly string[] voicePresetOptions = { "Serious woman", "Wise woman", "Calm woman", "Fast-paced woman", "Calm young girl", "Expressive teen girl", "Calm teen girl", "Sweet girl", "Patient man", "Determined man", "Young elegant man", "Teen boy", "Friendly man", "Deep voice man", "Rachel", "Aria", "Roger", "Sarah", "Laura", "Charlie", "George", "Callum", "River", "Liam", "Charlotte", "Alice", "Matilda", "Will", "Jessica", "Eric", "Chris", "Brian", "Daniel", "Lily", "Bill" };
+    private static readonly HashSet<string> descriptiveVoiceIds = new HashSet<string> { "Serious woman", "Wise woman", "Calm woman", "Fast-paced woman", "Calm young girl", "Expressive teen girl", "Calm teen girl", "Sweet girl", "Patient man", "Determined man", "Young elegant man", "Teen boy", "Friendly man", "Deep voice man" };
+    private static bool IsDescriptiveVoice(string id) { return descriptiveVoiceIds.Contains(id); }
     private readonly string[] emotionOptions = { "Default", "Happy", "Sad", "Angry", "Fearful", "Disgusted", "Surprised", "Neutral" };
-    private readonly string[] languageOptions = { "auto", "English", "Afrikaans", "Arabic", "Bulgarian", "Catalan", "Chinese", "Chinese,Yue", "Croatian", "Czech", "Danish", "Filipino", "Finnish", "French", "German", "Greek", "Hebrew", "Hindi", "Hungarian", "Indonesian", "Italian", "Japanese", "Korean", "Malay", "Norwegian", "Nynorsk", "Persian", "Polish", "Portuguese", "Romanian", "Russian", "Slovak", "Slovenian", "Spanish", "Swedish", "Tamil", "Thai", "Turkish", "Ukrainian", "Vietnamese" };
+    private readonly string[] languageOptions = { "auto", "English", "Afrikaans", "Arabic", "Bulgarian", "Catalan", "Chinese", "Chinese,Yue", "Croatian", "Czech", "Danish", "Filipino", "Finnish", "French", "German", "Greek", "Hebrew", "Hindi", "Hungarian", "Indonesian", "Italian", "Japanese", "Korean", "Malay", "Norwegian", "Nynorsk", "Persian", "Polish", "Portuguese", "Romanian", "Russian", "Slovak", "Slovenian", "Spanish", "Swedish", "Tamil", "Thai", "Turkish", "Ukrainian", "Vietnamese", "Armenian", "Assamese", "Asturian", "Azerbaijani", "Belarusian", "Bengali", "Bosnian", "Burmese", "Cebuano", "Dutch", "Estonian", "Galician", "Georgian", "Gujarati", "Hausa", "Icelandic", "Irish", "Javanese", "Kannada", "Kazakh", "Kyrgyz", "Latvian", "Lingala", "Lithuanian", "Luxembourgish", "Macedonian", "Malayalam", "Maltese", "Maori", "Marathi", "Mongolian", "Nepali", "Occitan", "Odia", "Pashto", "Punjabi", "Serbian", "Sindhi", "Somali", "Swahili", "Tajik", "Telugu", "Urdu", "Uzbek", "Welsh", "Yoruba" };
 
     // ============================
     // ======= INIT & GUI =========
@@ -1330,19 +1341,40 @@ public class LudoAIPlugin : EditorWindow
 
     private void DrawVoiceUI()
     {
-        GUILayout.Label("Generate Voice from Description", EditorStyles.boldLabel);
+        GUILayout.Label("Generate Voice from Description or Character Image (2 credits)", EditorStyles.boldLabel);
         GUILayout.Space(5);
 
-        GUILayout.Label("Voice Description:");
+        GUILayout.Label(string.IsNullOrEmpty(voiceImage) ? "Voice Description:" : "Voice Description (optional hints, the image drives the voice):");
         voiceDescription = EditorGUILayout.TextArea(voiceDescription, GUILayout.Height(60));
 
         GUILayout.Space(10);
 
-        GUILayout.Label($"Text to Speak (max 200 chars): {voiceText.Length}/200");
-        voiceText = EditorGUILayout.TextArea(voiceText, GUILayout.Height(60));
-        if (voiceText.Length > 200)
+        // Optional character image: the voice is designed from it
+        GUILayout.BeginHorizontal();
+        GUILayout.Label("Character Image (optional, URL or Base64):");
+        if (GUILayout.Button("Select from Project", GUILayout.Width(150)))
         {
-            voiceText = voiceText.Substring(0, 200);
+            string path = EditorUtility.OpenFilePanel("Select Character Image", "Assets", "png,jpg,jpeg,webp");
+            if (!string.IsNullOrEmpty(path))
+            {
+                string dataUri = LoadImageFileAsDataUri(path);
+                if (!string.IsNullOrEmpty(dataUri))
+                {
+                    voiceImage = dataUri;
+                    statusMessage = "Character image loaded from project (normalized for API)";
+                }
+            }
+        }
+        GUILayout.EndHorizontal();
+        voiceImage = EditorGUILayout.TextField(voiceImage);
+
+        GUILayout.Space(10);
+
+        GUILayout.Label($"Text to Speak (max {VoiceTextMax} chars): {voiceText.Length}/{VoiceTextMax}");
+        voiceText = EditorGUILayout.TextArea(voiceText, GUILayout.Height(60));
+        if (voiceText.Length > VoiceTextMax)
+        {
+            voiceText = voiceText.Substring(0, VoiceTextMax);
         }
 
         GUILayout.Space(10);
@@ -1357,7 +1389,7 @@ public class LudoAIPlugin : EditorWindow
 
         GUILayout.Space(10);
 
-        GUI.enabled = !isProcessing && !string.IsNullOrEmpty(voiceDescription) && !string.IsNullOrEmpty(voiceText);
+        GUI.enabled = !isProcessing && (!string.IsNullOrEmpty(voiceDescription) || !string.IsNullOrEmpty(voiceImage)) && !string.IsNullOrEmpty(voiceText);
         if (GUILayout.Button("Generate Voice", GUILayout.Height(30)))
         {
             isProcessing = true;
@@ -1385,20 +1417,27 @@ public class LudoAIPlugin : EditorWindow
 
     private void DrawSpeechUI()
     {
-        GUILayout.Label("Generate Speech with Voice Cloning", EditorStyles.boldLabel);
+        GUILayout.Label("Generate Speech with Voice Cloning (2 credits)", EditorStyles.boldLabel);
         GUILayout.Space(5);
 
-        GUILayout.Label($"Text to Speak (max 1000 chars): {speechText.Length}/1000");
+        GUILayout.Label($"Text to Speak (max {SpeechTextMax} chars): {speechText.Length}/{SpeechTextMax}");
         speechText = EditorGUILayout.TextArea(speechText, GUILayout.Height(80));
-        if (speechText.Length > 1000)
+        if (speechText.Length > SpeechTextMax)
         {
-            speechText = speechText.Substring(0, 1000);
+            speechText = speechText.Substring(0, SpeechTextMax);
         }
 
         GUILayout.Space(10);
 
         GUILayout.Label("Voice Sample (URL or base64):");
         speechSample = EditorGUILayout.TextField(speechSample);
+
+        GUILayout.Space(10);
+
+        GUILayout.Label($"Delivery (optional, e.g. \"angry, shouting\", max {DeliveryMax} chars): {speechDelivery.Length}/{DeliveryMax}");
+        speechDelivery = EditorGUILayout.TextField(speechDelivery);
+        if (speechDelivery.Length > DeliveryMax)
+            speechDelivery = speechDelivery.Substring(0, DeliveryMax);
 
         GUILayout.Space(10);
 
@@ -1430,14 +1469,14 @@ public class LudoAIPlugin : EditorWindow
 
     private void DrawSpeechPresetUI()
     {
-        GUILayout.Label("Generate Speech with Preset Voice", EditorStyles.boldLabel);
+        GUILayout.Label("Generate Speech with Preset Voice (1 credit)", EditorStyles.boldLabel);
         GUILayout.Space(5);
 
-        GUILayout.Label($"Text to Speak (max 1000 chars): {speechPresetText.Length}/1000");
+        GUILayout.Label($"Text to Speak (max {SpeechTextMax} chars): {speechPresetText.Length}/{SpeechTextMax}");
         speechPresetText = EditorGUILayout.TextArea(speechPresetText, GUILayout.Height(80));
-        if (speechPresetText.Length > 1000)
+        if (speechPresetText.Length > SpeechTextMax)
         {
-            speechPresetText = speechPresetText.Substring(0, 1000);
+            speechPresetText = speechPresetText.Substring(0, SpeechTextMax);
         }
 
         GUILayout.Space(10);
@@ -1448,9 +1487,19 @@ public class LudoAIPlugin : EditorWindow
 
         GUILayout.Space(10);
 
-        int emotionIndex = System.Array.IndexOf(emotionOptions, speechPresetEmotion);
-        emotionIndex = EditorGUILayout.Popup("Emotion:", emotionIndex, emotionOptions);
-        speechPresetEmotion = emotionOptions[emotionIndex];
+        if (IsDescriptiveVoice(speechPresetVoiceId))
+        {
+            int emotionIndex = System.Array.IndexOf(emotionOptions, speechPresetEmotion);
+            emotionIndex = EditorGUILayout.Popup("Emotion:", emotionIndex, emotionOptions);
+            speechPresetEmotion = emotionOptions[emotionIndex];
+        }
+        else
+        {
+            GUILayout.Label($"Delivery (optional, e.g. \"whispering, out of breath\", max {DeliveryMax} chars): {speechPresetDelivery.Length}/{DeliveryMax}");
+            speechPresetDelivery = EditorGUILayout.TextField(speechPresetDelivery);
+            if (speechPresetDelivery.Length > DeliveryMax)
+                speechPresetDelivery = speechPresetDelivery.Substring(0, DeliveryMax);
+        }
 
         GUILayout.Space(10);
 
@@ -2438,8 +2487,10 @@ public class LudoAIPlugin : EditorWindow
     private IEnumerator CreateVoice()
     {
         // Validate parameters
-        if (!ValidateRequired(voiceDescription, "Voice description"))
+        if (string.IsNullOrEmpty(voiceDescription) && string.IsNullOrEmpty(voiceImage))
         {
+            statusMessage = "Enter a voice description or a character image.";
+            EditorUtility.DisplayDialog("Voice Error", statusMessage, "OK");
             isProcessing = false;
             yield break;
         }
@@ -2450,7 +2501,7 @@ public class LudoAIPlugin : EditorWindow
             yield break;
         }
 
-        if (!ValidateTextLength(voiceText, 200, "Voice text"))
+        if (!ValidateTextLength(voiceText, VoiceTextMax, "Voice text"))
         {
             isProcessing = false;
             yield break;
@@ -2458,11 +2509,24 @@ public class LudoAIPlugin : EditorWindow
 
         var requestData = new Dictionary<string, object>
         {
-            ["voice_description"] = voiceDescription,
             ["text"] = voiceText,
             ["type"] = voiceType,
             ["augment_prompt"] = voiceAugment
         };
+        if (!string.IsNullOrEmpty(voiceDescription))
+            requestData["voice_description"] = voiceDescription;
+        if (!string.IsNullOrEmpty(voiceImage))
+        {
+            string normalizedVoiceImage = NormalizeImageInputForApi(voiceImage);
+            if (string.IsNullOrEmpty(normalizedVoiceImage))
+            {
+                statusMessage = "Failed to prepare the character image.";
+                EditorUtility.DisplayDialog("Voice Error", statusMessage, "OK");
+                isProcessing = false;
+                yield break;
+            }
+            requestData["image"] = normalizedVoiceImage;
+        }
 
         yield return GenerateAudio("/audio/voice", requestData, "voice", "Voice", audio => currentVoice = audio);
     }
@@ -2476,7 +2540,7 @@ public class LudoAIPlugin : EditorWindow
             yield break;
         }
 
-        if (!ValidateTextLength(speechText, 1000, "Speech text"))
+        if (!ValidateTextLength(speechText, SpeechTextMax, "Speech text"))
         {
             isProcessing = false;
             yield break;
@@ -2493,6 +2557,8 @@ public class LudoAIPlugin : EditorWindow
             ["text"] = speechText,
             ["sample"] = speechSample
         };
+        if (!string.IsNullOrWhiteSpace(speechDelivery))
+            requestData["delivery"] = speechDelivery.Trim();
 
         yield return GenerateAudio("/audio/speech", requestData, "speech", "Speech", audio => currentSpeech = audio);
     }
@@ -2506,7 +2572,7 @@ public class LudoAIPlugin : EditorWindow
             yield break;
         }
 
-        if (!ValidateTextLength(speechPresetText, 1000, "Speech text"))
+        if (!ValidateTextLength(speechPresetText, SpeechTextMax, "Speech text"))
         {
             isProcessing = false;
             yield break;
@@ -2516,9 +2582,13 @@ public class LudoAIPlugin : EditorWindow
         {
             ["text"] = speechPresetText,
             ["voice_preset_id"] = speechPresetVoiceId,
-            ["emotion"] = speechPresetEmotion,
             ["language"] = speechPresetLanguage
         };
+        // Descriptive voices take emotion only; first-name voices take delivery only (the other is a 400).
+        if (IsDescriptiveVoice(speechPresetVoiceId))
+            requestData["emotion"] = speechPresetEmotion;
+        else if (!string.IsNullOrWhiteSpace(speechPresetDelivery))
+            requestData["delivery"] = speechPresetDelivery.Trim();
 
         yield return GenerateAudio("/audio/speech-preset", requestData, "speech preset", "Speech Preset", audio => currentSpeechPreset = audio);
     }

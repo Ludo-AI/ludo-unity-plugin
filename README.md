@@ -92,7 +92,7 @@ The **Ludo AI Plugin** is a Unity Editor extension that integrates AI-powered as
 - **Music**: Background music with optional lyrics
 - **Voice**: AI-generated voices (human/non-human)
 - **Speech (Clone)**: Clone voices from samples
-- **Speech (Preset)**: 14 preset voices, 8 emotions, 40+ languages
+- **Speech (Preset)**: 35 preset voices (14 descriptive with 8 emotions, 21 first-name voices with a delivery note), 80+ languages
 
 ---
 
@@ -380,11 +380,13 @@ Generate AI-powered audio assets for your game.
 
 **Workflow:**
 
-1. Enter voice description (e.g., "deep male warrior voice", "cheerful female child")
-2. Enter text to speak (max 200 characters)
+1. Enter voice description (e.g., "deep male warrior voice", "cheerful female child"), and/or
+   pick a **Character Image** (optional; the voice is designed from the character, and the description
+   then becomes optional hints). One of the two is required
+2. Enter text to speak (max 100 characters)
 3. Select voice type: **Human** or **Non-human**
 4. Enable **Prompt Augmentation**
-5. Generate and save to `Assets/Audio/Voice/`
+5. Generate (2 credits) and save to `Assets/Audio/Voice/`
 
 ### Speech (Clone)
 
@@ -392,12 +394,13 @@ Clone a specific voice from a sample.
 
 **Workflow:**
 
-1. Enter text to speak (max 1000 characters)
+1. Enter text to speak (max 250 characters)
 2. Provide voice sample:
    - Enter URL to audio file, or
    - Upload/encode base64 audio
-3. Click **Generate Speech**
-4. Save to `Assets/Audio/Speech/`
+3. Optionally add a **Delivery** note for how the line is said (e.g. "angry, shouting"; max 50 characters)
+4. Click **Generate Speech** (2 credits)
+5. Save to `Assets/Audio/Speech/`
 
 **Requirements:**
 - Voice sample should be clear
@@ -406,19 +409,18 @@ Clone a specific voice from a sample.
 
 ### Speech (Preset)
 
-Use pre-configured voices with emotion control.
+Use pre-configured voices with emotion or delivery control (1 credit).
 
 **Workflow:**
 
-1. Enter text to speak (max 1000 characters)
-2. Select **Voice Preset** (14 options):
-   - Serious woman, Calm woman, Fast-paced woman
-   - Patient man, Determined man, Deep voice man
-   - Teen boy, Calm teen girl, Sweet girl
-   - And more...
-3. Select **Emotion** (8 options):
-   - Default, Happy, Sad, Angry, Fearful, Disgusted, Surprised, Neutral
-4. Select **Language** (40+ languages, or "auto" for detection)
+1. Enter text to speak (max 250 characters)
+2. Select **Voice Preset** (35 options in two families):
+   - Descriptive voices (14): Serious woman, Calm woman, Fast-paced woman, Patient man, Deep voice man, Teen boy, Sweet girl, and more
+   - First-name voices (21): Rachel, Aria, Roger, Sarah, Laura, Charlie, and more
+3. The next control depends on the family:
+   - Descriptive voices: select **Emotion** (8 options: Default, Happy, Sad, Angry, Fearful, Disgusted, Surprised, Neutral)
+   - First-name voices: type an optional **Delivery** note (e.g. "whispering, out of breath"; max 50 characters). These voices have no emotion setting
+4. Select **Language** (80+ languages, or "auto" for detection). Each voice family supports its own subset; the API rejects a language the chosen voice does not speak
 5. Generate and save to `Assets/Audio/SpeechPreset/`
 
 **When to Use:**
@@ -618,7 +620,7 @@ Generations run as jobs on Ludo's queue. While one runs, the status line shows "
 
 **Solutions:**
 - Verify all required fields are filled
-- Check character limits (speech: 1000 chars, voice: 200 chars)
+- Check character limits (speech: 250 chars, voice: 100 chars, delivery: 50 chars)
 - Ensure values are within valid ranges
 - Use supported formats (GLB for models, etc.)
 
@@ -969,8 +971,9 @@ This ensures:
 
 | Feature | Limit |
 |---------|-------|
-| Voice Text | 200 characters |
-| Speech Text | 1,000 characters |
+| Voice Text | 100 characters |
+| Speech Text | 250 characters |
+| Delivery note | 50 characters |
 | Sound Effect Duration | 0-10 seconds |
 | Batch Image Generation | 1-8 images |
 | 3D Model Face Count | 1,000-200,000 |
@@ -997,7 +1000,9 @@ Any perspective, Side-Scroll, Isometric, High Angle, Top-Down, 2.5D, First-Perso
 | Forge | Basic animations and simple sprites, lower cost | 1 - 5 s (0.5 s steps) |
 | Forge Pixel | Low-res pixel art | 1 - 5 s (0.5 s steps) |
 
-### Voice Presets (14 Options)
+### Voice Presets (35 Options)
+
+**Descriptive voices (14)**, take an emotion:
 
 1. Serious woman
 2. Wise woman
@@ -1014,13 +1019,19 @@ Any perspective, Side-Scroll, Isometric, High Angle, Top-Down, 2.5D, First-Perso
 13. Friendly man
 14. Deep voice man
 
-### Emotions (8 Options)
+**First-name voices (21)**, take a delivery note and no emotion:
+
+Rachel, Aria, Roger, Sarah, Laura, Charlie, George, Callum, River, Liam, Charlotte, Alice, Matilda, Will, Jessica, Eric, Chris, Brian, Daniel, Lily, Bill
+
+### Emotions (8 Options, descriptive voices only)
 
 Default, Happy, Sad, Angry, Fearful, Disgusted, Surprised, Neutral
 
-### Languages (40+ Supported)
+### Languages (80+ Supported)
 
-auto, English, Afrikaans, Arabic, Bulgarian, Catalan, Chinese, Chinese (Yue), Croatian, Czech, Danish, Filipino, Finnish, French, German, Greek, Hebrew, Hindi, Hungarian, Indonesian, Italian, Japanese, Korean, Malay, Norwegian, Nynorsk, Persian, Polish, Portuguese, Romanian, Russian, Slovak, Slovenian, Spanish, Swedish, Tamil, Thai, Turkish, Ukrainian, Vietnamese
+auto, English, Afrikaans, Arabic, Bulgarian, Catalan, Chinese, Chinese (Yue), Croatian, Czech, Danish, Filipino, Finnish, French, German, Greek, Hebrew, Hindi, Hungarian, Indonesian, Italian, Japanese, Korean, Malay, Norwegian, Nynorsk, Persian, Polish, Portuguese, Romanian, Russian, Slovak, Slovenian, Spanish, Swedish, Tamil, Thai, Turkish, Ukrainian, Vietnamese, Armenian, Assamese, Asturian, Azerbaijani, Belarusian, Bengali, Bosnian, Burmese, Cebuano, Dutch, Estonian, Galician, Georgian, Gujarati, Hausa, Icelandic, Irish, Javanese, Kannada, Kazakh, Kyrgyz, Latvian, Lingala, Lithuanian, Luxembourgish, Macedonian, Malayalam, Maltese, Maori, Marathi, Mongolian, Nepali, Occitan, Odia, Pashto, Punjabi, Serbian, Sindhi, Somali, Swahili, Tajik, Telugu, Urdu, Uzbek, Welsh, Yoruba
+
+Each voice family supports its own subset of these.
 
 ### Aspect Ratios (8 Options)
 

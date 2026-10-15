@@ -297,6 +297,38 @@ public static class Scenarios
         ClickSave(c, p, save, "mp3");
     }
 
+    // Audio round: descriptive preset voices take emotion (never delivery); first-name voices take
+    // delivery (never a non-Default emotion). Voice design takes an optional image; clone takes delivery.
+    static void SpeechPresetFamilies(Ctx c)
+    {
+        Audio(c, "SpeechPreset", "/audio/speech-preset", p => { p.Set("speechPresetText", "Welcome, traveler"); p.Set("speechPresetVoiceId", "Serious woman"); p.Set("speechPresetEmotion", "Happy"); p.Set("speechPresetDelivery", "ignored"); }, "Generate Speech", "currentSpeechPreset", "Save Speech");
+        var body = LastBody(c, "/audio/speech-preset");
+        c.Require(body != null, "no preset request recorded");
+        c.Check((string)body["emotion"] == "Happy", $"descriptive voice: emotion not sent ({body})");
+        c.Check(body["delivery"] == null, $"descriptive voice: delivery must not be sent ({body})");
+
+        Audio(c, "SpeechPreset", "/audio/speech-preset", p => { p.Set("speechPresetText", "Welcome, traveler"); p.Set("speechPresetVoiceId", "Rachel"); p.Set("speechPresetEmotion", "Happy"); p.Set("speechPresetDelivery", "whispering, out of breath"); }, "Generate Speech", "currentSpeechPreset", "Save Speech");
+        body = LastBody(c, "/audio/speech-preset");
+        c.Check(body["emotion"] == null, $"first-name voice: emotion must not be sent ({body})");
+        c.Check((string)body["delivery"] == "whispering, out of breath", $"first-name voice: delivery not sent ({body})");
+    }
+
+    static void VoiceFromImage(Ctx c)
+    {
+        Audio(c, "Voice", "/audio/voice", p => { p.Set("voiceImage", FakeFile(c, "input-knight.webp")); p.Set("voiceText", "You shall not pass"); }, "Generate Voice", "currentVoice", "Save Voice");
+        var body = LastBody(c, "/audio/voice");
+        c.Require(body != null, "no voice request recorded");
+        c.Check(!string.IsNullOrEmpty((string)body["image"]), $"image not sent ({body})");
+        c.Check(body["voice_description"] == null, $"empty description must be omitted ({body})");
+    }
+
+    static void SpeechCloneDelivery(Ctx c)
+    {
+        Audio(c, "Speech", "/audio/speech", p => { p.Set("speechText", "Welcome, traveler"); p.Set("speechSample", FakeFile(c, "sample.mp3")); p.Set("speechDelivery", "angry, shouting"); }, "Generate Speech", "currentSpeech", "Save Speech");
+        var body = LastBody(c, "/audio/speech");
+        c.Check((string)body?["delivery"] == "angry, shouting", $"delivery not sent ({body})");
+    }
+
     // ---------------------------------------------------------------- failure paths
 
     static void JobFails(Ctx c)
@@ -597,6 +629,9 @@ public static class Scenarios
         new("generate", "audio: voice", c => Audio(c, "Voice", "/audio/voice", p => { p.Set("voiceDescription", "old wizard"); p.Set("voiceText", "You shall not pass"); }, "Generate Voice", "currentVoice", "Save Voice"), LiveToo: true),
         new("generate", "audio: speech (clone)", c => Audio(c, "Speech", "/audio/speech", p => { p.Set("speechText", "Welcome, traveler"); p.Set("speechSample", FakeFile(c, "sample.mp3")); }, "Generate Speech", "currentSpeech", "Save Speech")),
         new("generate", "audio: speech (preset)", c => Audio(c, "SpeechPreset", "/audio/speech-preset", p => p.Set("speechPresetText", "Welcome, traveler"), "Generate Speech", "currentSpeechPreset", "Save Speech"), LiveToo: true),
+        new("generate", "audio: preset voice families (emotion vs delivery)", SpeechPresetFamilies),
+        new("generate", "audio: voice from character image", VoiceFromImage),
+        new("generate", "audio: speech clone with delivery", SpeechCloneDelivery),
         new("failure", "job fails: reason shown, no result", JobFails),
         new("failure", "submit 429 queue full: reason shown", QueueFull),
         new("failure", "bad API key: reason shown", BadApiKey),
