@@ -21,7 +21,7 @@ public class LudoAIPlugin : EditorWindow
     // Release version, sent on every API request as x-ludo-tool-version so Ludo can see
     // which builds are still in use. Bump it with every change under Assets/ (and the
     // README and package name to match): tools/check-version.py enforces this.
-    public const string PluginVersion = "1.0.4";
+    public const string PluginVersion = "1.0.5";
 
     // API key and URL for making requests to Ludo AI
     private string apiKey = ""; // API key loaded from EditorPrefs - user must input their own key
@@ -48,11 +48,11 @@ public class LudoAIPlugin : EditorWindow
     private TabState currentTab = TabState.Sprites;
 
     // Model tab sub-state
-    private enum ModelTabState { Create, Rig, Animate }
+    private enum ModelTabState { Create, Rig, Animate, Directional }
     private ModelTabState currentModelTab = ModelTabState.Create;
 
     // Sprite tab sub-state
-    private enum SpriteTabState { Image, ImageToSpritesheet }
+    private enum SpriteTabState { Image, ImageToSpritesheet, Upscale }
     private SpriteTabState currentSpriteTab = SpriteTabState.Image;
 
     // Audio tab sub-state
@@ -116,6 +116,10 @@ public class LudoAIPlugin : EditorWindow
     private int model3DTargetFaces = 50000;
     private int model3DTextureSize = 2048;
     private string model3DTextureType = "pbr";
+    private string model3DModel = "prop"; // prop | hero (hero takes the front image only)
+    private bool model3DRig = false;      // also rig it in the same call
+    private string model3DCreateRigType = "humanoid_template";
+    private string model3DCreateJointNaming = "mixamo";
     private Generated3DModel current3DModel = null;
     private List<Texture2D> model3DSnapshotTextures = new List<Texture2D>();
     private Vector2 model3DScrollPosition;
@@ -136,6 +140,49 @@ public class LudoAIPlugin : EditorWindow
     private bool model3DAnimateAugmentPrompt = true;
     private List<AnimationClip3D> current3DAnimations = new List<AnimationClip3D>();
     private Vector2 model3DAnimateScrollPosition;
+
+    // Directional Sprites Variables (render a 3D model into one sheet or still per direction)
+    private string directionalModelInput = "";
+    private string directionalAnimationSource = "none";
+    private string directionalAnimationUrl = "";
+    private string directionalPresetCategory = "";
+    private string directionalPresetId = "";
+    private string directionalCropLoop = "default";
+    private string directionalModelAnimation = "";
+    private string directionalPerspective = "isometric";
+    private List<string> directionalDirections = new List<string> { "SW" };
+    private string directionalStyleId = "render_3d";
+    // Only the settings changed from the style's defaults, by name, with the option's own value.
+    private Dictionary<string, JToken> directionalStyleParams = new Dictionary<string, JToken>();
+    private bool directionalShowAdvanced = false;
+    private bool directionalKeepHorizontalTravel = false;
+    private bool directionalKeepVerticalTravel = true;
+    private int directionalFrameSize = 640;
+    private int directionalNumFrames = 36;
+    private string directionalLoop = "default";
+    private bool directionalGif = false;
+    private DirectionalStylesResponse directionalStyles = null;
+    private bool directionalStylesLoading = false;
+    private string directionalStylesError = null;
+    private List<AnimationPreset> animationPresets = null;
+    private bool animationPresetsLoading = false;
+    private List<DirectionalPreview> directionalPreviews = null;
+    private Dictionary<string, List<Texture2D>> directionalPreviewFrames = new Dictionary<string, List<Texture2D>>();
+    private List<DirectionalSheet> directionalSheets = null;
+    private List<DirectionalStill> directionalStills = null;
+    private Dictionary<string, Texture2D> remoteTextureCache = new Dictionary<string, Texture2D>();
+    private HashSet<string> remoteTextureLoading = new HashSet<string>();
+    private Vector2 directionalScrollPosition;
+
+    // Upscale Image Variables
+    private string upscaleImageInput = "";
+    private int upscaleSourceWidth = 0;  // 0 = not known yet
+    private int upscaleSourceHeight = 0;
+    private GeneratedImage currentUpscaledImage = null;
+    // The source must be below this on its longest side; the result is capped at it.
+    private const int UpscaleMaxSide = 2048;
+    private const int MaxUploadBytes = 15 * 1024 * 1024;
+    private Vector2 upscaleScrollPosition;
 
     // Audio Generation Variables
     private string soundEffectDescription = "";
@@ -199,11 +246,27 @@ public class LudoAIPlugin : EditorWindow
     private readonly string[] spritesheetImageTypeOptions = { "sprite", "sprite-vfx", "item-icon", "ui_asset", "logo", "sprite-tiling-horizontal", "sprite-tiling-vertical", "parallax_layer", "tile", "texture", "portrait", "card-art" };
     
     private readonly int[] textureSizeOptions = { 1024, 2048 };
+    private readonly string[] model3DModelOptions = { "prop", "hero" };
+    private readonly string[] model3DModelLabels = { "Prop (4 credits)", "Hero (15 credits)" };
+    private readonly string[] model3DModelHints =
+    {
+        "Low-cost, good for everyday props and environment pieces. Takes an optional back view.",
+        "Highly detailed, accurate 3D for close-up assets. Slower; front image only (no back view)."
+    };
     private readonly string[] textureTypeOptions = { "pbr", "simple", "none" };
     private readonly string[] model3DRigTypeOptions = { "general", "humanoid", "game", "humanoid_template", "humanoid_template_hands" };
     private readonly string[] model3DJointNamingOptions = { "mixamo", "smpl", "humanik", "unreal", "godot", "rigify", "vroid" };
     private readonly string[] model3DAnimateModeOptions = { "rot_trans", "rot_only" };
     private readonly string[] model3DAnimateModeLabels = { "Rotation + Translation", "Rotation Only (retargeting)" };
+
+    private readonly string[] directionalAnimationSourceOptions = { "none", "animation", "preset", "model_animation" };
+    private readonly string[] directionalAnimationSourceLabels = { "None (rest pose, one frame)", "Animation GLB (from Animate 3D)", "Animation preset", "Animation inside the GLB" };
+    private readonly string[] directionalPerspectiveOptions = { "horizon", "low", "isometric", "high", "top" };
+    private readonly string[] directionalPerspectiveLabels = { "Horizon (side view)", "Low", "Isometric", "High", "Top (straight down)" };
+    // Where the camera stands around a character facing S.
+    private readonly string[] directionalDirectionOptions = { "S", "SW", "W", "NW", "N", "NE", "E", "SE" };
+    // "default" leaves the field out, so the preset or animation's own loop flag decides.
+    private readonly string[] triStateOptions = { "default", "on", "off" };
     
     private readonly string[] voiceTypeOptions = { "human", "non-human" };
     // Two voice families (API 0.x audio round): descriptive voices take `emotion`, first-name voices take `delivery`.
@@ -425,6 +488,8 @@ public class LudoAIPlugin : EditorWindow
             currentModelTab = ModelTabState.Rig;
         if (GUILayout.Toggle(currentModelTab == ModelTabState.Animate, "Animate 3D (BETA)", EditorStyles.toolbarButton))
             currentModelTab = ModelTabState.Animate;
+        if (GUILayout.Toggle(currentModelTab == ModelTabState.Directional, "Directional Sprites (BETA)", EditorStyles.toolbarButton))
+            currentModelTab = ModelTabState.Directional;
         GUILayout.EndHorizontal();
 
         GUILayout.Space(10);
@@ -439,6 +504,9 @@ public class LudoAIPlugin : EditorWindow
                 break;
             case ModelTabState.Animate:
                 DrawAnimate3DModelUI();
+                break;
+            case ModelTabState.Directional:
+                DrawDirectionalSpritesUI();
                 break;
         }
     }
@@ -482,7 +550,16 @@ public class LudoAIPlugin : EditorWindow
 
         GUILayout.Space(10);
 
-        // Optional back view: the model's back follows it instead of being invented
+        int modelIndex = Array.IndexOf(model3DModelOptions, model3DModel);
+        if (modelIndex < 0) modelIndex = 0;
+        modelIndex = EditorGUILayout.Popup("Model:", modelIndex, model3DModelLabels);
+        model3DModel = model3DModelOptions[modelIndex];
+        GUILayout.Label(model3DModelHints[modelIndex], EditorStyles.helpBox);
+
+        GUILayout.Space(10);
+
+        // Optional back view: the model's back follows it instead of being invented (prop only)
+        GUI.enabled = model3DModel != "hero";
         GUILayout.BeginHorizontal();
         GUILayout.Label("Back View (optional):");
         if (GUILayout.Button("Select Back View", GUILayout.Width(150)))
@@ -499,16 +576,38 @@ public class LudoAIPlugin : EditorWindow
                 }
             }
         }
-        GUI.enabled = !string.IsNullOrEmpty(model3DBackImageUrl);
+        GUI.enabled = model3DModel != "hero" && !string.IsNullOrEmpty(model3DBackImageUrl);
         if (GUILayout.Button("Clear", GUILayout.Width(60)))
         {
             model3DBackImageUrl = "";
         }
-        GUI.enabled = true;
+        GUI.enabled = model3DModel != "hero";
         GUILayout.EndHorizontal();
 
         model3DBackImageUrl = EditorGUILayout.TextField(model3DBackImageUrl);
-        GUILayout.Label("The same subject seen from behind, at the same scale, pose and style. Only a back view works: a side or three-quarter view distorts the model. No extra cost.", EditorStyles.helpBox);
+        GUI.enabled = true;
+        GUILayout.Label(model3DModel == "hero"
+            ? "Hero takes the front image only: the back view is not sent."
+            : "The same subject seen from behind, at the same scale, pose and style. Only a back view works: a side or three-quarter view distorts the model. No extra cost.", EditorStyles.helpBox);
+
+        GUILayout.Space(10);
+
+        // Rig in the same call: ready for Animate 3D and Directional Sprites without a separate Rig step.
+        model3DRig = EditorGUILayout.Toggle("Also Rig the Model (+1 credit)", model3DRig);
+        if (model3DRig)
+        {
+            int createRigIndex = Array.IndexOf(model3DRigTypeOptions, model3DCreateRigType);
+            if (createRigIndex < 0) createRigIndex = Array.IndexOf(model3DRigTypeOptions, "humanoid_template");
+            createRigIndex = EditorGUILayout.Popup("Rig Type:", createRigIndex, model3DRigTypeOptions);
+            model3DCreateRigType = model3DRigTypeOptions[createRigIndex];
+
+            int createNamingIndex = Array.IndexOf(model3DJointNamingOptions, model3DCreateJointNaming);
+            if (createNamingIndex < 0) createNamingIndex = 0;
+            createNamingIndex = EditorGUILayout.Popup("Joint Naming:", createNamingIndex, model3DJointNamingOptions);
+            model3DCreateJointNaming = model3DJointNamingOptions[createNamingIndex];
+
+            GUILayout.Label("humanoid_template suits two-armed, two-legged characters and is what animation presets need; use general for creatures and objects. The rig credit is charged only if the model comes back rigged.", EditorStyles.helpBox);
+        }
 
         GUILayout.Space(10);
 
@@ -587,11 +686,28 @@ public class LudoAIPlugin : EditorWindow
 
             GUILayout.Space(5);
 
-            if (GUILayout.Button("Use for Rigging", GUILayout.Height(30)))
+            if (current3DModel.Rigged)
+            {
+                GUILayout.Label("This model is rigged: animate it, or render it as Directional Sprites.", EditorStyles.helpBox);
+                if (GUILayout.Button("Use for Animation", GUILayout.Height(30)))
+                {
+                    model3DAnimateModelInput = current3DModel.ModelUrl;
+                    currentModelTab = ModelTabState.Animate;
+                    statusMessage = "Rigged model loaded into Animate tab. Enter a motion prompt and click Animate 3D Model.";
+                }
+            }
+            else if (GUILayout.Button("Use for Rigging", GUILayout.Height(30)))
             {
                 model3DRigModelInput = current3DModel.ModelUrl;
                 currentModelTab = ModelTabState.Rig;
                 statusMessage = "Created model loaded into Rig tab. Choose rig options and click Rig Model.";
+            }
+
+            GUILayout.Space(5);
+
+            if (GUILayout.Button("Use for Directional Sprites", GUILayout.Height(30)))
+            {
+                UseForDirectionalSprites(current3DModel.ModelUrl, null);
             }
 
             GUILayout.EndVertical();
@@ -707,6 +823,13 @@ public class LudoAIPlugin : EditorWindow
                 model3DAnimateModelInput = currentRigged3DModel.ModelUrl;
                 currentModelTab = ModelTabState.Animate;
                 statusMessage = "Rigged model loaded into Animate tab. Enter a motion prompt and click Animate 3D Model.";
+            }
+
+            GUILayout.Space(5);
+
+            if (GUILayout.Button("Use for Directional Sprites", GUILayout.Height(30)))
+            {
+                UseForDirectionalSprites(currentRigged3DModel.ModelUrl, null);
             }
             GUI.enabled = true;
 
@@ -862,6 +985,12 @@ public class LudoAIPlugin : EditorWindow
                     string safeName = SanitizeFileName(title);
                     SaveGlbFromUrl(clip.GlbUrl, $"Anim3D_{safeName}");
                 }
+
+                if (GUILayout.Button("Use for Directional Sprites", GUILayout.Height(26)))
+                {
+                    // The clip is made for the model it was animated from: hand over both.
+                    UseForDirectionalSprites(model3DAnimateModelInput, clip.GlbUrl);
+                }
                 GUI.enabled = true;
 
                 GUILayout.EndHorizontal();
@@ -871,6 +1000,1084 @@ public class LudoAIPlugin : EditorWindow
         }
 
         GUILayout.EndScrollView();
+    }
+
+    // ============================
+    // === DIRECTIONAL SPRITES ====
+    // ============================
+    // Render a 3D model, as it is or animated, into one spritesheet (or one still) per
+    // direction in a style. Styles and their settings come from the API, so new styles
+    // appear here without a plugin update.
+
+    private void UseForDirectionalSprites(string modelUrl, string animationUrl)
+    {
+        directionalModelInput = modelUrl ?? "";
+        if (!string.IsNullOrEmpty(animationUrl))
+        {
+            directionalAnimationSource = "animation";
+            directionalAnimationUrl = animationUrl;
+        }
+        currentTab = TabState.Models;
+        currentModelTab = ModelTabState.Directional;
+        statusMessage = string.IsNullOrEmpty(animationUrl)
+            ? "Model loaded into Directional Sprites. Pick an animation, style and directions, then Preview."
+            : "Model and animation loaded into Directional Sprites. Pick a style and directions, then Preview.";
+    }
+
+    private DirectionalStyle SelectedDirectionalStyle()
+    {
+        if (directionalStyles == null || directionalStyles.Styles == null) return null;
+        foreach (var style in directionalStyles.Styles)
+        {
+            if (style.Id == directionalStyleId) return style;
+        }
+        return null;
+    }
+
+    private void DrawDirectionalSpritesUI()
+    {
+        // Discovery is free: load the styles the first time the tab is shown.
+        if (directionalStyles == null && !directionalStylesLoading && directionalStylesError == null)
+        {
+            EditorCoroutineUtility.StartCoroutineOwnerless(LoadDirectionalStyles());
+        }
+
+        directionalScrollPosition = GUILayout.BeginScrollView(directionalScrollPosition);
+
+        GUILayout.BeginHorizontal();
+        GUILayout.Label("Directional Sprites", EditorStyles.boldLabel);
+        GUILayout.FlexibleSpace();
+        DrawBetaBadge();
+        GUILayout.EndHorizontal();
+        GUILayout.Space(5);
+        GUILayout.Label(
+            "Render a 3D model into one spritesheet per direction, in a 2D style. Every direction is rendered together on the same frame size, scale and floor, so the sheets line up. Preview is free; spritesheets cost 1 credit per direction, stills 0.5.",
+            EditorStyles.helpBox);
+
+        GUILayout.Space(10);
+
+        // ---- model
+        GUILayout.BeginHorizontal();
+        GUILayout.Label("Model URL or Base64 GLB:");
+        if (GUILayout.Button("Select GLB from Project", GUILayout.Width(170)))
+        {
+            string loaded = LoadGlbFromProjectAsDataUri();
+            if (!string.IsNullOrEmpty(loaded))
+            {
+                directionalModelInput = loaded;
+                statusMessage = "GLB loaded from project for Directional Sprites";
+            }
+        }
+        GUILayout.EndHorizontal();
+        directionalModelInput = EditorGUILayout.TextField(directionalModelInput);
+
+        if (currentRigged3DModel != null && !string.IsNullOrEmpty(currentRigged3DModel.ModelUrl) && directionalModelInput != currentRigged3DModel.ModelUrl)
+        {
+            if (GUILayout.Button("Use Rigged Model", GUILayout.Height(24)))
+            {
+                directionalModelInput = currentRigged3DModel.ModelUrl;
+            }
+        }
+        GUILayout.Label("To animate it, the model must be rigged (Rig tab, or Create 3D with Also Rig). Without an animation each direction is a single frame.", EditorStyles.helpBox);
+
+        GUILayout.Space(10);
+
+        // ---- animation
+        int sourceIndex = Array.IndexOf(directionalAnimationSourceOptions, directionalAnimationSource);
+        if (sourceIndex < 0) sourceIndex = 0;
+        sourceIndex = EditorGUILayout.Popup("Animation:", sourceIndex, directionalAnimationSourceLabels);
+        directionalAnimationSource = directionalAnimationSourceOptions[sourceIndex];
+
+        if (directionalAnimationSource == "animation")
+        {
+            GUILayout.Label("Animation GLB URL or Base64 (made for this model's skeleton):");
+            GUILayout.BeginHorizontal();
+            directionalAnimationUrl = EditorGUILayout.TextField(directionalAnimationUrl);
+            if (GUILayout.Button("Select Animation GLB", GUILayout.Width(150)))
+            {
+                string loaded = LoadGlbFromProjectAsDataUri();
+                if (!string.IsNullOrEmpty(loaded)) directionalAnimationUrl = loaded;
+            }
+            GUILayout.EndHorizontal();
+            GUILayout.Label("Tip: in Animate 3D, 'Use for Directional Sprites' on a candidate fills in the model and its animation.", EditorStyles.helpBox);
+        }
+        else if (directionalAnimationSource == "preset")
+        {
+            DrawDirectionalPresetPicker();
+        }
+        else if (directionalAnimationSource == "model_animation")
+        {
+            directionalModelAnimation = EditorGUILayout.TextField("Animation Name:", directionalModelAnimation);
+            GUILayout.Label("The name of an animation the GLB itself carries (e.g. a clip exported from Blender).", EditorStyles.helpBox);
+        }
+
+        if (directionalAnimationSource != "none")
+        {
+            directionalKeepHorizontalTravel = EditorGUILayout.Toggle("Keep Ground Travel", directionalKeepHorizontalTravel);
+            directionalKeepVerticalTravel = EditorGUILayout.Toggle("Keep Vertical Motion", directionalKeepVerticalTravel);
+            GUILayout.Label("Ground travel off keeps the character in place (best for game sprites); vertical motion keeps jumps and bobbing.", EditorStyles.helpBox);
+        }
+
+        GUILayout.Space(10);
+
+        // ---- camera
+        int perspectiveIndex = Array.IndexOf(directionalPerspectiveOptions, directionalPerspective);
+        if (perspectiveIndex < 0) perspectiveIndex = 2;
+        perspectiveIndex = EditorGUILayout.Popup("Perspective:", perspectiveIndex, directionalPerspectiveLabels);
+        directionalPerspective = directionalPerspectiveOptions[perspectiveIndex];
+
+        GUILayout.Label("Directions (where the camera stands around a character facing S):");
+        GUILayout.BeginHorizontal();
+        foreach (string direction in directionalDirectionOptions)
+        {
+            bool on = directionalDirections.Contains(direction);
+            bool now = GUILayout.Toggle(on, direction, EditorStyles.miniButton, GUILayout.Width(36));
+            if (now != on) SetDirection(direction, now);
+        }
+        GUILayout.EndHorizontal();
+        GUILayout.BeginHorizontal();
+        if (GUILayout.Button("All 8", GUILayout.Width(60))) directionalDirections = new List<string>(directionalDirectionOptions);
+        if (GUILayout.Button("Just SW", GUILayout.Width(60))) directionalDirections = new List<string> { "SW" };
+        GUILayout.EndHorizontal();
+
+        GUILayout.Space(10);
+
+        // ---- style
+        DrawDirectionalStylePicker();
+
+        GUILayout.Space(10);
+
+        // ---- actions
+        bool ready = !isProcessing && !string.IsNullOrEmpty(directionalModelInput) && directionalDirections.Count > 0 && DirectionalAnimationReady();
+
+        GUI.enabled = ready;
+        if (GUILayout.Button("Preview (free)", GUILayout.Height(28)))
+        {
+            isProcessing = true;
+            statusMessage = "Rendering a preview...";
+            EditorCoroutineUtility.StartCoroutineOwnerless(PreviewDirectionalSprites());
+        }
+        GUI.enabled = true;
+
+        GUILayout.Space(5);
+
+        GUILayout.Label("Spritesheets", EditorStyles.boldLabel);
+        directionalFrameSize = EditorGUILayout.IntSlider("Frame Size (px):", directionalFrameSize, 32, 640);
+        if (directionalAnimationSource != "none")
+        {
+            directionalNumFrames = EditorGUILayout.IntSlider("Frames per Sheet:", directionalNumFrames, 4, 100);
+            int loopIndex = Array.IndexOf(triStateOptions, directionalLoop);
+            if (loopIndex < 0) loopIndex = 0;
+            loopIndex = EditorGUILayout.Popup("Seamless Loop:", loopIndex, new[] { "Animation default", "Loop", "Don't loop" });
+            directionalLoop = triStateOptions[loopIndex];
+        }
+        directionalGif = EditorGUILayout.Toggle("Also Return GIFs", directionalGif);
+
+        GUI.enabled = ready;
+        int count = directionalDirections.Count;
+        if (GUILayout.Button($"Render Spritesheets ({count} credit{(count == 1 ? "" : "s")})", GUILayout.Height(30)))
+        {
+            isProcessing = true;
+            statusMessage = "Rendering spritesheets...";
+            EditorCoroutineUtility.StartCoroutineOwnerless(CreateDirectionalSprites());
+        }
+        GUI.enabled = !isProcessing && !string.IsNullOrEmpty(directionalModelInput) && directionalDirections.Count > 0;
+        if (GUILayout.Button($"Render Stills ({(count * 0.5f).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} credits)", GUILayout.Height(26)))
+        {
+            isProcessing = true;
+            statusMessage = "Rendering stills...";
+            EditorCoroutineUtility.StartCoroutineOwnerless(CreateDirectionalStills());
+        }
+        GUI.enabled = true;
+        GUILayout.Label("Stills render the model as it is (no animation): one large image per direction, ready for Animate Sprite.", EditorStyles.helpBox);
+
+        GUILayout.Space(10);
+        GUILayout.Label($"Status: {statusMessage}");
+        GUILayout.Space(10);
+
+        DrawDirectionalPreviews();
+        DrawDirectionalSheets();
+        DrawDirectionalStills();
+
+        GUILayout.EndScrollView();
+    }
+
+    // Directions are kept in compass order whatever order they were clicked in.
+    private void SetDirection(string direction, bool on)
+    {
+        var next = new List<string>();
+        foreach (string d in directionalDirectionOptions)
+        {
+            bool include = d == direction ? on : directionalDirections.Contains(d);
+            if (include) next.Add(d);
+        }
+        directionalDirections = next;
+    }
+
+    private bool DirectionalAnimationReady()
+    {
+        switch (directionalAnimationSource)
+        {
+            case "animation": return !string.IsNullOrEmpty(directionalAnimationUrl);
+            case "preset": return !string.IsNullOrEmpty(directionalPresetId);
+            case "model_animation": return !string.IsNullOrEmpty(directionalModelAnimation);
+            default: return true;
+        }
+    }
+
+    private void DrawDirectionalPresetPicker()
+    {
+        if (animationPresets == null)
+        {
+            if (!animationPresetsLoading)
+            {
+                EditorCoroutineUtility.StartCoroutineOwnerless(LoadAnimationPresets());
+            }
+            GUILayout.Label("Loading animation presets...");
+            return;
+        }
+        if (animationPresets.Count == 0)
+        {
+            GUILayout.Label("No animation presets available.", EditorStyles.helpBox);
+            return;
+        }
+
+        var categories = new List<string>();
+        foreach (var preset in animationPresets)
+        {
+            string category = string.IsNullOrEmpty(preset.Category) ? "Other" : preset.Category;
+            if (!categories.Contains(category)) categories.Add(category);
+        }
+        int categoryIndex = categories.IndexOf(directionalPresetCategory);
+        if (categoryIndex < 0) categoryIndex = 0;
+        categoryIndex = EditorGUILayout.Popup("Preset Category:", categoryIndex, categories.ToArray());
+        directionalPresetCategory = categories[categoryIndex];
+
+        var inCategory = animationPresets.FindAll(p => (string.IsNullOrEmpty(p.Category) ? "Other" : p.Category) == directionalPresetCategory);
+        var names = inCategory.ConvertAll(p => string.IsNullOrEmpty(p.Name) ? p.Id : p.Name).ToArray();
+        int presetIndex = inCategory.FindIndex(p => p.Id == directionalPresetId);
+        if (presetIndex < 0) presetIndex = 0;
+        presetIndex = EditorGUILayout.Popup("Preset:", presetIndex, names);
+        AnimationPreset chosen = inCategory[presetIndex];
+        directionalPresetId = chosen.Id;
+
+        if (!string.IsNullOrEmpty(chosen.Description))
+        {
+            GUILayout.Label(chosen.Description, EditorStyles.helpBox);
+        }
+        if (!string.IsNullOrEmpty(chosen.PreviewUrl) && GUILayout.Button("Watch Preset Preview", GUILayout.Width(170)))
+        {
+            Application.OpenURL(chosen.PreviewUrl);
+        }
+
+        int cropIndex = Array.IndexOf(triStateOptions, directionalCropLoop);
+        if (cropIndex < 0) cropIndex = 0;
+        cropIndex = EditorGUILayout.Popup("Trim to Loop:", cropIndex, new[] { "Preset default", "Trim to the seamless loop", "Keep the whole clip" });
+        directionalCropLoop = triStateOptions[cropIndex];
+
+        GUILayout.Label("Presets need a humanoid_template or humanoid_template_hands rig.", EditorStyles.helpBox);
+    }
+
+    private void DrawDirectionalStylePicker()
+    {
+        if (directionalStyles == null)
+        {
+            if (directionalStylesError != null)
+            {
+                EditorGUILayout.HelpBox(directionalStylesError, MessageType.Warning);
+                if (GUILayout.Button("Retry Loading Styles", GUILayout.Width(170)))
+                {
+                    directionalStylesError = null;
+                }
+            }
+            else
+            {
+                GUILayout.Label("Loading styles...");
+            }
+            return;
+        }
+
+        var styles = directionalStyles.Styles ?? new List<DirectionalStyle>();
+        if (styles.Count == 0)
+        {
+            GUILayout.Label("No styles available.", EditorStyles.helpBox);
+            return;
+        }
+
+        int styleIndex = styles.FindIndex(st => st.Id == directionalStyleId);
+        if (styleIndex < 0) styleIndex = 0;
+        int newIndex = EditorGUILayout.Popup("Style:", styleIndex, styles.ConvertAll(st => string.IsNullOrEmpty(st.Label) ? st.Id : st.Label).ToArray());
+        if (styles[newIndex].Id != directionalStyleId)
+        {
+            // Settings belong to a style: start the new one from its defaults.
+            directionalStyleParams.Clear();
+        }
+        directionalStyleId = styles[newIndex].Id;
+        DirectionalStyle style = styles[newIndex];
+
+        GUILayout.BeginHorizontal();
+        Texture2D thumb = RemoteTexture(style.ThumbnailUrl);
+        if (thumb != null)
+        {
+            GUILayout.Label(thumb, GUILayout.Width(96), GUILayout.Height(96));
+        }
+        if (!string.IsNullOrEmpty(style.Description))
+        {
+            GUILayout.Label(style.Description, EditorStyles.helpBox);
+        }
+        GUILayout.EndHorizontal();
+
+        DrawStyleSettings(style.Settings);
+        if (style.AdvancedSettings != null && style.AdvancedSettings.Count > 0)
+        {
+            directionalShowAdvanced = EditorGUILayout.Toggle("Advanced Style Settings", directionalShowAdvanced);
+            if (directionalShowAdvanced)
+            {
+                DrawStyleSettings(style.AdvancedSettings);
+            }
+        }
+        if (directionalStyleParams.Count > 0 && GUILayout.Button("Reset Style Settings", GUILayout.Width(170)))
+        {
+            directionalStyleParams.Clear();
+        }
+    }
+
+    // One control per setting: a dropdown of its options, a toggle for a bool, and for a
+    // color its named options plus any custom colour (#rrggbb). Only changes are sent.
+    private void DrawStyleSettings(List<DirectionalStyleSetting> settings)
+    {
+        if (settings == null) return;
+        foreach (var setting in settings)
+        {
+            if (setting == null || string.IsNullOrEmpty(setting.Name)) continue;
+            string label = (string.IsNullOrEmpty(setting.Label) ? setting.Name : setting.Label) + ":";
+            JToken current;
+            if (!directionalStyleParams.TryGetValue(setting.Name, out current)) current = setting.Default;
+
+            if (setting.Kind == "bool")
+            {
+                bool value = current != null && current.Type == JTokenType.Boolean && current.Value<bool>();
+                bool next = EditorGUILayout.Toggle(label, value);
+                SetStyleParam(setting, new JValue(next));
+                continue;
+            }
+
+            var options = setting.Options ?? new List<DirectionalStyleOption>();
+            var labels = options.ConvertAll(o => string.IsNullOrEmpty(o.Label) ? TokenText(o.Value) : o.Label);
+            int index = options.FindIndex(o => JToken.DeepEquals(o.Value, current));
+            bool isColor = setting.Kind == "color";
+            if (isColor)
+            {
+                labels.Add("Custom colour...");
+                if (index < 0) index = options.Count; // a custom colour is set
+            }
+            if (labels.Count == 0) continue;
+            if (index < 0) index = 0;
+            int picked = EditorGUILayout.Popup(label, index, labels.ToArray());
+
+            if (picked < options.Count)
+            {
+                SetStyleParam(setting, options[picked].Value);
+            }
+            else
+            {
+                string hex = current != null && current.Type == JTokenType.String && TokenText(current).StartsWith("#") ? TokenText(current) : "#ffffff";
+                hex = EditorGUILayout.TextField("    Colour (#rrggbb):", hex);
+                if (IsHexColor(hex))
+                {
+                    SetStyleParam(setting, new JValue(hex));
+                }
+                else
+                {
+                    GUILayout.Label("Enter a colour like #ff8800.", EditorStyles.helpBox);
+                }
+            }
+        }
+    }
+
+    private void SetStyleParam(DirectionalStyleSetting setting, JToken value)
+    {
+        if (value == null || JToken.DeepEquals(value, setting.Default))
+        {
+            directionalStyleParams.Remove(setting.Name);
+        }
+        else
+        {
+            directionalStyleParams[setting.Name] = value;
+        }
+    }
+
+    private static bool IsHexColor(string text)
+    {
+        return !string.IsNullOrEmpty(text) && System.Text.RegularExpressions.Regex.IsMatch(text, "^#[0-9a-fA-F]{6}$");
+    }
+
+    private static string TokenText(JToken token)
+    {
+        if (token == null) return "";
+        return token.Type == JTokenType.String ? token.Value<string>() : token.ToString(Formatting.None);
+    }
+
+    private void DrawDirectionalPreviews()
+    {
+        if (directionalPreviews == null || directionalPreviews.Count == 0) return;
+
+        GUILayout.Label("Preview:", EditorStyles.boldLabel);
+        GUILayout.BeginHorizontal();
+        bool playing = false;
+        foreach (var preview in directionalPreviews)
+        {
+            GUILayout.BeginVertical("box", GUILayout.Width(140));
+            GUILayout.Label(preview.Direction, EditorStyles.miniLabel);
+            List<Texture2D> frames;
+            if (directionalPreviewFrames.TryGetValue(preview.Direction ?? "", out frames) && frames.Count > 0)
+            {
+                // Play the frames at the animation's own rate.
+                float fps = preview.Fps > 0 ? preview.Fps : 12f;
+                int frame = frames.Count == 1 ? 0 : (int)(EditorApplication.timeSinceStartup * fps) % frames.Count;
+                Texture2D texture = frames[Mathf.Clamp(frame, 0, frames.Count - 1)];
+                if (texture != null) GUILayout.Label(texture, GUILayout.Width(128), GUILayout.Height(128));
+                playing |= frames.Count > 1;
+            }
+            else
+            {
+                GUILayout.Label("Loading...", GUILayout.Width(128), GUILayout.Height(128));
+            }
+            GUILayout.EndVertical();
+        }
+        GUILayout.EndHorizontal();
+        GUILayout.Label("Previews are small and nothing is saved. Render spritesheets for the real thing.", EditorStyles.helpBox);
+        GUILayout.Space(10);
+
+        if (playing) Repaint();
+    }
+
+    private void DrawDirectionalSheets()
+    {
+        if (directionalSheets == null || directionalSheets.Count == 0) return;
+
+        GUILayout.Label($"Spritesheets ({directionalSheets.Count}):", EditorStyles.boldLabel);
+        if (GUILayout.Button("Save All Spritesheets", GUILayout.Height(28)))
+        {
+            var urls = new List<KeyValuePair<string, string>>();
+            foreach (var sheet in directionalSheets)
+            {
+                urls.Add(new KeyValuePair<string, string>(sheet.SpritesheetUrl, $"Directional_{sheet.Direction}"));
+            }
+            EditorCoroutineUtility.StartCoroutineOwnerless(DownloadImagesToFolder(urls, "Save Spritesheets", "spritesheet"));
+        }
+
+        foreach (var sheet in directionalSheets)
+        {
+            GUILayout.BeginVertical("box");
+            GUILayout.BeginHorizontal();
+            Texture2D texture = RemoteTexture(sheet.SpritesheetUrl);
+            if (texture != null) GUILayout.Label(texture, GUILayout.Width(128), GUILayout.Height(128));
+            GUILayout.BeginVertical();
+            GUILayout.Label($"Direction {sheet.Direction}", EditorStyles.boldLabel);
+            GUILayout.Label($"{sheet.NumFrames} frames in a {sheet.NumCols}x{sheet.NumRows} grid, {sheet.Fps:0.##} fps", EditorStyles.miniLabel);
+            GUI.enabled = !string.IsNullOrEmpty(sheet.SpritesheetUrl);
+            if (GUILayout.Button("Save Spritesheet", GUILayout.Height(24)))
+            {
+                EditorCoroutineUtility.StartCoroutineOwnerless(DownloadAndSaveImageUrl(sheet.SpritesheetUrl, "Save Spritesheet", $"Directional_{sheet.Direction}_{DateTime.Now:yyyyMMdd_HHmmss}", "Spritesheet"));
+            }
+            GUI.enabled = true;
+            if (!string.IsNullOrEmpty(sheet.GifUrl) && GUILayout.Button("Save GIF", GUILayout.Height(24)))
+            {
+                EditorCoroutineUtility.StartCoroutineOwnerless(DownloadAndSaveFile(sheet.GifUrl, "Save GIF", $"Directional_{sheet.Direction}_{DateTime.Now:yyyyMMdd_HHmmss}", "gif", "GIF"));
+            }
+            GUILayout.EndVertical();
+            GUILayout.EndHorizontal();
+            GUILayout.EndVertical();
+        }
+        GUILayout.Label("Slice a sheet in Unity's Sprite Editor with Grid By Cell Count, using the columns and rows above.", EditorStyles.helpBox);
+        GUILayout.Space(10);
+    }
+
+    private void DrawDirectionalStills()
+    {
+        if (directionalStills == null || directionalStills.Count == 0) return;
+
+        GUILayout.Label($"Stills ({directionalStills.Count}):", EditorStyles.boldLabel);
+        if (GUILayout.Button("Save All Stills", GUILayout.Height(28)))
+        {
+            var urls = new List<KeyValuePair<string, string>>();
+            foreach (var still in directionalStills)
+            {
+                urls.Add(new KeyValuePair<string, string>(still.Url, $"DirectionalStill_{still.Direction}"));
+            }
+            EditorCoroutineUtility.StartCoroutineOwnerless(DownloadImagesToFolder(urls, "Save Stills", "still"));
+        }
+
+        foreach (var still in directionalStills)
+        {
+            GUILayout.BeginVertical("box");
+            GUILayout.BeginHorizontal();
+            Texture2D texture = RemoteTexture(still.Url);
+            if (texture != null) GUILayout.Label(texture, GUILayout.Width(128), GUILayout.Height(128));
+            GUILayout.BeginVertical();
+            GUILayout.Label($"Direction {still.Direction}", EditorStyles.boldLabel);
+            if (still.Width > 0) GUILayout.Label($"{still.Width}x{still.Height}", EditorStyles.miniLabel);
+            GUI.enabled = !string.IsNullOrEmpty(still.Url);
+            if (GUILayout.Button("Save Still", GUILayout.Height(24)))
+            {
+                EditorCoroutineUtility.StartCoroutineOwnerless(DownloadAndSaveImageUrl(still.Url, "Save Still", $"DirectionalStill_{still.Direction}_{DateTime.Now:yyyyMMdd_HHmmss}", "Still"));
+            }
+            if (GUILayout.Button("Animate This Still", GUILayout.Height(24)))
+            {
+                spritesheetInitialImageUrl = still.Url;
+                currentTab = TabState.Sprites;
+                currentSpriteTab = SpriteTabState.ImageToSpritesheet;
+                statusMessage = $"Still ({still.Direction}) loaded into Animate Sprite.";
+            }
+            GUI.enabled = true;
+            GUILayout.EndVertical();
+            GUILayout.EndHorizontal();
+            GUILayout.EndVertical();
+        }
+        GUILayout.Space(10);
+    }
+
+    // The fields previews, spritesheets and stills share. Stills take no animation.
+    private Dictionary<string, object> DirectionalPayload(bool withAnimation)
+    {
+        var payload = new Dictionary<string, object>
+        {
+            ["model"] = directionalModelInput,
+            ["perspective"] = directionalPerspective,
+            ["directions"] = new List<string>(directionalDirections),
+            ["style_id"] = directionalStyleId
+        };
+        if (directionalStyleParams.Count > 0)
+        {
+            var styleParams = new JObject();
+            foreach (var pair in directionalStyleParams) styleParams[pair.Key] = pair.Value;
+            payload["style_params"] = styleParams;
+        }
+        if (!withAnimation) return payload;
+
+        switch (directionalAnimationSource)
+        {
+            case "animation":
+                payload["animation_url"] = directionalAnimationUrl;
+                break;
+            case "preset":
+                payload["preset_id"] = directionalPresetId;
+                if (directionalCropLoop != "default") payload["crop_loop"] = directionalCropLoop == "on";
+                break;
+            case "model_animation":
+                payload["model_animation"] = directionalModelAnimation;
+                break;
+        }
+        if (directionalAnimationSource != "none")
+        {
+            payload["keep_horizontal_travel"] = directionalKeepHorizontalTravel;
+            payload["keep_vertical_travel"] = directionalKeepVerticalTravel;
+        }
+        return payload;
+    }
+
+    private IEnumerator LoadDirectionalStyles()
+    {
+        directionalStylesLoading = true;
+        var result = new EditorHttpResult();
+        yield return SendJsonWithHttpClient(HttpMethod.Get, apiUrl + "/assets/sprite/directional-styles", null, 60, result);
+        directionalStylesLoading = false;
+
+        if (!result.Success)
+        {
+            directionalStylesError = FormatEditorHttpError("loading Directional Sprites styles", result);
+            Debug.LogWarning($"[LudoAIPlugin] {directionalStylesError}");
+            yield break;
+        }
+        try
+        {
+            directionalStyles = JsonConvert.DeserializeObject<DirectionalStylesResponse>(result.Body);
+            if (directionalStyles != null && directionalStyles.Styles != null && SelectedDirectionalStyle() == null && directionalStyles.Styles.Count > 0)
+            {
+                directionalStyleId = directionalStyles.Styles[0].Id;
+            }
+        }
+        catch (Exception e)
+        {
+            directionalStylesError = $"Could not read the styles: {e.Message}";
+        }
+        Repaint();
+    }
+
+    private IEnumerator LoadAnimationPresets()
+    {
+        animationPresetsLoading = true;
+        var result = new EditorHttpResult();
+        yield return SendJsonWithHttpClient(HttpMethod.Get, apiUrl + "/assets/sprite/animation-presets", null, 60, result);
+        animationPresetsLoading = false;
+
+        if (!result.Success)
+        {
+            statusMessage = FormatEditorHttpError("loading animation presets", result);
+            Debug.LogWarning($"[LudoAIPlugin] {statusMessage}");
+            animationPresets = new List<AnimationPreset>();
+            yield break;
+        }
+        try
+        {
+            var response = JsonConvert.DeserializeObject<AnimationPresetsResponse>(result.Body);
+            animationPresets = response != null && response.Animations != null ? response.Animations : new List<AnimationPreset>();
+        }
+        catch (Exception e)
+        {
+            statusMessage = $"Could not read the animation presets: {e.Message}";
+            animationPresets = new List<AnimationPreset>();
+        }
+        Repaint();
+    }
+
+    // The preview is not a job: one synchronous call, nothing saved, no credits. A newer
+    // preview from the same account replaces a running one, which then answers 204.
+    private IEnumerator PreviewDirectionalSprites()
+    {
+        var payload = DirectionalPayload(true);
+        var settings = new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore };
+        var result = new EditorHttpResult();
+        yield return SendJsonWithHttpClient(HttpMethod.Post, apiUrl + "/assets/sprite/directional-preview", JsonConvert.SerializeObject(payload, settings), 600, result);
+
+        if (result.StatusCode == 204)
+        {
+            statusMessage = "This preview was replaced by a newer one from your account.";
+            isProcessing = false;
+            yield break;
+        }
+        if (!result.Success)
+        {
+            statusMessage = FormatEditorHttpError("previewing Directional Sprites", result);
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog("Directional Sprites Error", statusMessage, "OK");
+            isProcessing = false;
+            yield break;
+        }
+
+        try
+        {
+            var response = JsonConvert.DeserializeObject<DirectionalPreviewResponse>(result.Body);
+            ClearPreviewFrames();
+            directionalPreviews = response != null && response.Previews != null ? response.Previews : new List<DirectionalPreview>();
+            foreach (var preview in directionalPreviews)
+            {
+                var frames = new List<Texture2D>();
+                directionalPreviewFrames[preview.Direction ?? ""] = frames;
+                if (preview.FrameUrls == null) continue;
+                foreach (string url in preview.FrameUrls) frames.Add(null);
+                for (int i = 0; i < preview.FrameUrls.Count; i++)
+                {
+                    int slot = i;
+                    EditorCoroutineUtility.StartCoroutineOwnerless(LoadTexture(preview.FrameUrls[i], t => { if (slot < frames.Count) frames[slot] = t; }));
+                }
+            }
+            statusMessage = directionalPreviews.Count > 0
+                ? $"Preview ready ({directionalPreviews.Count} direction{(directionalPreviews.Count == 1 ? "" : "s")})."
+                : "The preview came back empty.";
+        }
+        catch (Exception e)
+        {
+            statusMessage = $"Error reading the preview: {e.Message}";
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog("Directional Sprites Error", statusMessage, "OK");
+        }
+        isProcessing = false;
+    }
+
+    private void ClearPreviewFrames()
+    {
+        foreach (var frames in directionalPreviewFrames.Values)
+        {
+            foreach (var texture in frames)
+            {
+                if (texture != null) UnityEngine.Object.DestroyImmediate(texture);
+            }
+        }
+        directionalPreviewFrames.Clear();
+    }
+
+    private IEnumerator CreateDirectionalSprites()
+    {
+        var payload = DirectionalPayload(true);
+        payload["target_frame_size"] = directionalFrameSize;
+        if (directionalAnimationSource != "none")
+        {
+            payload["num_frames"] = directionalNumFrames;
+            if (directionalLoop != "default") payload["loop"] = directionalLoop == "on";
+        }
+        if (directionalGif) payload["gif"] = true;
+
+        var job = new EditorHttpResult();
+        yield return RunApiJob("/assets/sprite/directional", payload, "Rendering spritesheets", job);
+
+        if (!job.Success)
+        {
+            statusMessage = FormatEditorHttpError("rendering Directional Sprites", job);
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog("Directional Sprites Error", statusMessage, "OK");
+            isProcessing = false;
+            yield break;
+        }
+
+        try
+        {
+            var response = JsonConvert.DeserializeObject<DirectionalSpritesResponse>(job.Body);
+            directionalSheets = response != null && response.Sheets != null ? response.Sheets : new List<DirectionalSheet>();
+            if (directionalSheets.Count > 0)
+            {
+                statusMessage = $"Rendered {directionalSheets.Count} spritesheet(s).";
+            }
+            else
+            {
+                statusMessage = "The render came back with no spritesheets.";
+                EditorUtility.DisplayDialog("Directional Sprites Error", statusMessage, "OK");
+            }
+        }
+        catch (Exception e)
+        {
+            statusMessage = $"Error reading the spritesheets: {e.Message}";
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog("Directional Sprites Error", statusMessage, "OK");
+        }
+        isProcessing = false;
+    }
+
+    private IEnumerator CreateDirectionalStills()
+    {
+        var payload = DirectionalPayload(false);
+
+        var job = new EditorHttpResult();
+        yield return RunApiJob("/assets/sprite/directional-stills", payload, "Rendering stills", job);
+
+        if (!job.Success)
+        {
+            statusMessage = FormatEditorHttpError("rendering Directional Sprites stills", job);
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog("Directional Sprites Error", statusMessage, "OK");
+            isProcessing = false;
+            yield break;
+        }
+
+        try
+        {
+            var response = JsonConvert.DeserializeObject<DirectionalStillsResponse>(job.Body);
+            directionalStills = response != null && response.Images != null ? response.Images : new List<DirectionalStill>();
+            if (directionalStills.Count > 0)
+            {
+                statusMessage = $"Rendered {directionalStills.Count} still(s).";
+            }
+            else
+            {
+                statusMessage = "The render came back with no stills.";
+                EditorUtility.DisplayDialog("Directional Sprites Error", statusMessage, "OK");
+            }
+        }
+        catch (Exception e)
+        {
+            statusMessage = $"Error reading the stills: {e.Message}";
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog("Directional Sprites Error", statusMessage, "OK");
+        }
+        isProcessing = false;
+    }
+
+    // ============================
+    // ====== UPSCALE IMAGE =======
+    // ============================
+
+    private void UseForUpscale(string url, int width, int height)
+    {
+        upscaleImageInput = url ?? "";
+        upscaleSourceWidth = width;
+        upscaleSourceHeight = height;
+        currentTab = TabState.Sprites;
+        currentSpriteTab = SpriteTabState.Upscale;
+        statusMessage = "Image loaded into Upscale Image.";
+    }
+
+    private void DrawUpscaleImageUI()
+    {
+        upscaleScrollPosition = GUILayout.BeginScrollView(upscaleScrollPosition);
+
+        GUILayout.Label("Upscale Image", EditorStyles.boldLabel);
+        GUILayout.Space(5);
+        GUILayout.Label("The same picture at a higher resolution: up to 4x, capped at 2048px on the longest side. The source must be under 2048px. 0.5 credits. The upscaled image is a new image; the original is kept.", EditorStyles.helpBox);
+
+        GUILayout.Space(10);
+
+        GUILayout.BeginHorizontal();
+        GUILayout.Label("Image URL or Base64:");
+        if (GUILayout.Button("Select from Project", GUILayout.Width(150)))
+        {
+            string path = EditorUtility.OpenFilePanel("Select Image to Upscale", "Assets", "png,jpg,jpeg,webp");
+            if (!string.IsNullOrEmpty(path))
+            {
+                int w, h;
+                string dataUri = LoadImageFileUnchangedAsDataUri(path, out w, out h);
+                if (!string.IsNullOrEmpty(dataUri))
+                {
+                    upscaleImageInput = dataUri;
+                    upscaleSourceWidth = w;
+                    upscaleSourceHeight = h;
+                    statusMessage = $"Image loaded from project ({w}x{h})";
+                }
+            }
+        }
+        GUILayout.EndHorizontal();
+
+        string edited = EditorGUILayout.TextField(upscaleImageInput);
+        if (edited != upscaleImageInput)
+        {
+            upscaleImageInput = edited;
+            upscaleSourceWidth = upscaleSourceHeight = 0; // a pasted image: the server checks the size
+        }
+
+        bool tooLarge = Mathf.Max(upscaleSourceWidth, upscaleSourceHeight) >= UpscaleMaxSide;
+        if (upscaleSourceWidth > 0)
+        {
+            GUILayout.Label(tooLarge
+                ? $"This image is {upscaleSourceWidth}x{upscaleSourceHeight}: at 2048px or more on its longest side it cannot be upscaled."
+                : $"Source: {upscaleSourceWidth}x{upscaleSourceHeight}", tooLarge ? EditorStyles.helpBox : EditorStyles.miniLabel);
+        }
+
+        GUILayout.Space(10);
+
+        GUI.enabled = !isProcessing && !string.IsNullOrEmpty(upscaleImageInput) && !tooLarge;
+        if (GUILayout.Button("Upscale Image (0.5 credits)", GUILayout.Height(30)))
+        {
+            isProcessing = true;
+            statusMessage = "Upscaling image...";
+            EditorCoroutineUtility.StartCoroutineOwnerless(UpscaleImage());
+        }
+        GUI.enabled = true;
+
+        GUILayout.Space(10);
+        GUILayout.Label($"Status: {statusMessage}");
+        GUILayout.Space(10);
+
+        if (currentUpscaledImage != null)
+        {
+            GUILayout.Label("Upscaled Image:", EditorStyles.boldLabel);
+            GUILayout.BeginVertical("box");
+            Texture2D preview;
+            if (imagePreviewCache.TryGetValue(currentUpscaledImage.Url, out preview) && preview != null)
+            {
+                GUILayout.Label(preview, GUILayout.Width(200), GUILayout.Height(200));
+            }
+            if (currentUpscaledImage.Width > 0)
+            {
+                GUILayout.Label($"Size: {currentUpscaledImage.Width}x{currentUpscaledImage.Height}", EditorStyles.miniLabel);
+            }
+            if (GUILayout.Button("Save Upscaled Image", GUILayout.Height(28)))
+            {
+                EditorCoroutineUtility.StartCoroutineOwnerless(DownloadAndSaveImageUrl(currentUpscaledImage.Url, "Save Upscaled Image", $"Upscaled_{DateTime.Now:yyyyMMdd_HHmmss}", "Upscaled image"));
+            }
+            GUILayout.EndVertical();
+        }
+
+        GUILayout.EndScrollView();
+    }
+
+    private IEnumerator UpscaleImage()
+    {
+        var payload = new Dictionary<string, object> { ["image"] = upscaleImageInput };
+
+        var job = new EditorHttpResult();
+        yield return RunApiJob("/assets/image/upscale", payload, "Upscaling image", job);
+
+        if (!job.Success)
+        {
+            statusMessage = FormatEditorHttpError("upscaling image", job);
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog("Upscale Image Error", statusMessage, "OK");
+            isProcessing = false;
+            yield break;
+        }
+
+        try
+        {
+            // One image, not an array.
+            GeneratedImage image = JsonConvert.DeserializeObject<GeneratedImage>(job.Body);
+            if (image != null && !string.IsNullOrEmpty(image.Url))
+            {
+                currentUpscaledImage = image;
+                EditorCoroutineUtility.StartCoroutineOwnerless(LoadImagePreview(image));
+                statusMessage = "Image upscaled! Save it to your project.";
+            }
+            else
+            {
+                statusMessage = "The upscale response contained no image.";
+                EditorUtility.DisplayDialog("Upscale Image Error", statusMessage, "OK");
+            }
+        }
+        catch (Exception e)
+        {
+            statusMessage = $"Error reading the upscaled image: {e.Message}";
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog("Upscale Image Error", statusMessage, "OK");
+        }
+        isProcessing = false;
+    }
+
+    // Upscaling wants the original pixels, so unlike the 3D upload path this neither
+    // resizes nor re-encodes: the file goes as it is, with its size read for the 2048 check.
+    private string LoadImageFileUnchangedAsDataUri(string path, out int width, out int height)
+    {
+        width = height = 0;
+        try
+        {
+            byte[] bytes = File.ReadAllBytes(path);
+            if (bytes.Length > MaxUploadBytes)
+            {
+                statusMessage = "This image is larger than 15MB, the most the API takes.";
+                EditorUtility.DisplayDialog("Error", statusMessage, "OK");
+                return null;
+            }
+            Texture2D texture = DecodeImageBytesToTexture(bytes);
+            if (texture == null)
+            {
+                statusMessage = "Could not decode image. Use PNG, JPEG, or WebP.";
+                EditorUtility.DisplayDialog("Error", statusMessage, "OK");
+                return null;
+            }
+            width = texture.width;
+            height = texture.height;
+            UnityEngine.Object.DestroyImmediate(texture);
+
+            string mime = "image/png";
+            if (bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8) mime = "image/jpeg";
+            else if (bytes.Length >= 12 && bytes[0] == (byte)'R' && bytes[1] == (byte)'I' && bytes[8] == (byte)'W' && bytes[9] == (byte)'E') mime = "image/webp";
+            return $"data:{mime};base64,{Convert.ToBase64String(bytes)}";
+        }
+        catch (Exception e)
+        {
+            statusMessage = $"Error loading image: {e.Message}";
+            Debug.LogError($"[LudoAIPlugin] Error loading image: {e.Message}");
+            EditorUtility.DisplayDialog("Error", $"Failed to load image: {e.Message}", "OK");
+            return null;
+        }
+    }
+
+    // ============================
+    // ===== REMOTE IMAGES ========
+    // ============================
+
+    // A texture for a result url, loaded once in the background; null until it arrives.
+    private Texture2D RemoteTexture(string url)
+    {
+        if (string.IsNullOrEmpty(url)) return null;
+        Texture2D texture;
+        if (remoteTextureCache.TryGetValue(url, out texture)) return texture;
+        if (remoteTextureLoading.Add(url))
+        {
+            EditorCoroutineUtility.StartCoroutineOwnerless(LoadTexture(url, t =>
+            {
+                remoteTextureCache[url] = t;
+                remoteTextureLoading.Remove(url);
+            }));
+        }
+        return null;
+    }
+
+    private IEnumerator LoadTexture(string url, Action<Texture2D> done)
+    {
+        using (UnityWebRequest www = UnityWebRequest.Get(url))
+        {
+            www.SetRequestHeader("x-ludo-tool", "unity");
+            www.timeout = 120;
+            yield return www.SendWebRequest();
+
+            Texture2D texture = null;
+            if (www.result == UnityWebRequest.Result.Success && www.downloadHandler != null && www.downloadHandler.data != null)
+            {
+                texture = DecodeImageBytesToTexture(www.downloadHandler.data);
+            }
+            if (texture == null)
+            {
+                Debug.LogWarning($"[LudoAIPlugin] Could not load image {url}: {www.error}");
+            }
+            done(texture);
+            Repaint();
+        }
+    }
+
+    // Downloads an image result and saves it as PNG (Unity does not import WebP).
+    private IEnumerator DownloadAndSaveImageUrl(string url, string dialogTitle, string baseName, string what)
+    {
+        UnityWebRequest www = UnityWebRequest.Get(url);
+        www.SetRequestHeader("x-ludo-tool", "unity");
+        yield return www.SendWebRequest();
+
+        if (www.result != UnityWebRequest.Result.Success)
+        {
+            Debug.LogError($"[LudoAIPlugin] Failed to download {what}: {www.error}");
+            EditorUtility.DisplayDialog("Download Error", $"Failed to download {what}: {www.error}", "OK");
+            yield break;
+        }
+
+        try
+        {
+            string extension;
+            byte[] data = ConvertImageForUnity(www.downloadHandler.data, url, out extension);
+            string savePath = EditorUtility.SaveFilePanel(dialogTitle, "Assets", $"{baseName}.{extension}", extension);
+            if (!string.IsNullOrEmpty(savePath))
+            {
+                File.WriteAllBytes(savePath, data);
+                if (savePath.StartsWith(Application.dataPath)) AssetDatabase.Refresh();
+                Debug.Log($"[LudoAIPlugin] {what} saved to: {savePath}");
+                EditorUtility.DisplayDialog("Success", $"{what} saved successfully to:\n{savePath}", "OK");
+            }
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[LudoAIPlugin] Failed to save {what}: {e.Message}");
+            EditorUtility.DisplayDialog("Save Error", $"Failed to save {what}: {e.Message}", "OK");
+        }
+    }
+
+    // Saves each (url, base name) as PNG into one folder the user picks.
+    private IEnumerator DownloadImagesToFolder(List<KeyValuePair<string, string>> items, string dialogTitle, string what)
+    {
+        string folderPath = EditorUtility.SaveFolderPanel(dialogTitle, "Assets", "DirectionalSprites");
+        if (string.IsNullOrEmpty(folderPath)) yield break;
+
+        string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        int saved = 0;
+        for (int i = 0; i < items.Count; i++)
+        {
+            if (string.IsNullOrEmpty(items[i].Key)) continue;
+            statusMessage = $"Downloading {what} {i + 1}/{items.Count}...";
+            UnityWebRequest www = UnityWebRequest.Get(items[i].Key);
+            www.SetRequestHeader("x-ludo-tool", "unity");
+            www.timeout = 300;
+            yield return www.SendWebRequest();
+
+            if (www.result != UnityWebRequest.Result.Success)
+            {
+                Debug.LogError($"[LudoAIPlugin] Failed to download {what} {i + 1}: {www.error}");
+                continue;
+            }
+            try
+            {
+                string extension;
+                byte[] data = ConvertImageForUnity(www.downloadHandler.data, items[i].Key, out extension);
+                File.WriteAllBytes(Path.Combine(folderPath, $"{SanitizeFileName(items[i].Value)}_{stamp}.{extension}"), data);
+                saved++;
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[LudoAIPlugin] Failed to save {what} {i + 1}: {e.Message}");
+            }
+        }
+
+        if (folderPath.StartsWith(Application.dataPath) || folderPath.Replace('\\', '/').Contains("/Assets"))
+        {
+            AssetDatabase.Refresh();
+        }
+        statusMessage = $"Saved {saved} of {items.Count} {what}(s).";
+        EditorUtility.DisplayDialog("Download Complete", statusMessage, "OK");
     }
 
     // ============================
@@ -910,6 +2117,8 @@ public class LudoAIPlugin : EditorWindow
             currentSpriteTab = SpriteTabState.Image;
         if (GUILayout.Toggle(currentSpriteTab == SpriteTabState.ImageToSpritesheet, "Animate Sprite", EditorStyles.toolbarButton))
             currentSpriteTab = SpriteTabState.ImageToSpritesheet;
+        if (GUILayout.Toggle(currentSpriteTab == SpriteTabState.Upscale, "Upscale Image", EditorStyles.toolbarButton))
+            currentSpriteTab = SpriteTabState.Upscale;
         GUILayout.EndHorizontal();
 
         GUILayout.Space(10);
@@ -921,6 +2130,9 @@ public class LudoAIPlugin : EditorWindow
                 break;
             case SpriteTabState.ImageToSpritesheet:
                 DrawImageToSpritesheetUI();
+                break;
+            case SpriteTabState.Upscale:
+                DrawUpscaleImageUI();
                 break;
         }
     }
@@ -1032,6 +2244,15 @@ public class LudoAIPlugin : EditorWindow
                     };
                     statusMessage = "Sprite selected. Go to 'Animate Sprite' to animate it.";
                 }
+
+                // Known once the preview has loaded; an image at the cap or above cannot be upscaled.
+                bool tooLarge = Mathf.Max(image.Width, image.Height) >= UpscaleMaxSide;
+                GUI.enabled = !tooLarge;
+                if (GUILayout.Button(tooLarge ? "Too large to upscale" : "Upscale", GUILayout.Height(25)))
+                {
+                    UseForUpscale(image.Url, image.Width, image.Height);
+                }
+                GUI.enabled = true;
                 GUILayout.EndVertical();
                 
                 GUILayout.EndHorizontal();
@@ -1803,6 +3024,12 @@ public class LudoAIPlugin : EditorWindow
             if (loadSuccess && texture != null)
             {
                 imagePreviewCache[image.Url] = texture;
+                // The API's image results carry only a url: take the size from the picture.
+                if (image.Width <= 0 || image.Height <= 0)
+                {
+                    image.Width = texture.width;
+                    image.Height = texture.height;
+                }
                 Debug.Log($"[LudoAIPlugin] Successfully loaded image preview");
             }
             else
@@ -1855,10 +3082,19 @@ public class LudoAIPlugin : EditorWindow
             ["image"] = normalizedImage,
             ["target_num_faces"] = model3DTargetFaces,
             ["texture_size"] = model3DTextureSize,
-            ["texture_type"] = model3DTextureType
+            ["texture_type"] = model3DTextureType,
+            ["model"] = model3DModel
         };
 
-        if (!string.IsNullOrEmpty(model3DBackImageUrl))
+        if (model3DRig)
+        {
+            requestData["rig"] = true;
+            requestData["rig_type"] = model3DCreateRigType;
+            requestData["joint_naming"] = model3DCreateJointNaming;
+        }
+
+        // Hero takes the front image only (the API answers a back_image with a 400).
+        if (model3DModel != "hero" && !string.IsNullOrEmpty(model3DBackImageUrl))
         {
             string normalizedBack = NormalizeImageInputForApi(model3DBackImageUrl);
             if (string.IsNullOrEmpty(normalizedBack))
@@ -1871,7 +3107,7 @@ public class LudoAIPlugin : EditorWindow
             requestData["back_image"] = normalizedBack;
         }
 
-        Debug.Log($"[LudoAIPlugin] 3D Model creation request (faces={model3DTargetFaces}, texture={model3DTextureSize}, type={model3DTextureType}, image_chars={normalizedImage.Length}, back_view={requestData.ContainsKey("back_image")})");
+        Debug.Log($"[LudoAIPlugin] 3D Model creation request (model={model3DModel}, faces={model3DTargetFaces}, texture={model3DTextureSize}, type={model3DTextureType}, image_chars={normalizedImage.Length}, back_view={requestData.ContainsKey("back_image")}, rig={model3DRig})");
 
         var job = new EditorHttpResult();
         yield return RunApiJob("/assets/3d-model", requestData, "Creating 3D model", job);
@@ -1892,7 +3128,18 @@ public class LudoAIPlugin : EditorWindow
 
             if (current3DModel != null && !string.IsNullOrEmpty(current3DModel.ModelUrl))
             {
-                statusMessage = "3D Model created successfully! Use 'Use for Rigging' to continue, or download the model.";
+                if (current3DModel.Rigged)
+                {
+                    // Rigged in the same call: the Rig step's result, so its hand-offs work too.
+                    currentRigged3DModel = new Rigged3DModelResult { ModelUrl = current3DModel.ModelUrl, Rigged = true };
+                    statusMessage = "3D Model created and rigged! Use it for animation or Directional Sprites, or download it.";
+                }
+                else
+                {
+                    statusMessage = model3DRig
+                        ? "3D Model created, but it could not be rigged (no rig credit charged). Try the Rig tab with another rig type."
+                        : "3D Model created successfully! Use 'Use for Rigging' to continue, or download the model.";
+                }
                 Debug.Log($"[LudoAIPlugin] {statusMessage} URL: {current3DModel.ModelUrl}");
 
                 if (current3DModel.Snapshots != null && current3DModel.Snapshots.Count > 0)
@@ -3409,6 +4656,9 @@ public class LudoAIPlugin : EditorWindow
 
         [JsonProperty("snapshots")]
         public List<string> Snapshots { get; set; }
+
+        [JsonProperty("rigged")]
+        public bool Rigged { get; set; }
     }
 
     [Serializable]
@@ -3492,6 +4742,190 @@ public class LudoAIPlugin : EditorWindow
 
         [JsonProperty("duration")]
         public float Duration { get; set; }
+    }
+
+    // GET /assets/sprite/directional-styles
+    [Serializable]
+    public class DirectionalStylesResponse
+    {
+        [JsonProperty("styles")]
+        public List<DirectionalStyle> Styles { get; set; }
+
+        [JsonProperty("perspectives")]
+        public List<string> Perspectives { get; set; }
+
+        [JsonProperty("directions")]
+        public List<string> Directions { get; set; }
+    }
+
+    [Serializable]
+    public class DirectionalStyle
+    {
+        [JsonProperty("id")]
+        public string Id { get; set; }
+
+        [JsonProperty("label")]
+        public string Label { get; set; }
+
+        [JsonProperty("description")]
+        public string Description { get; set; }
+
+        [JsonProperty("family")]
+        public string Family { get; set; }
+
+        [JsonProperty("pixel")]
+        public bool Pixel { get; set; }
+
+        [JsonProperty("thumbnail_url")]
+        public string ThumbnailUrl { get; set; }
+
+        [JsonProperty("version")]
+        public int Version { get; set; }
+
+        [JsonProperty("settings")]
+        public List<DirectionalStyleSetting> Settings { get; set; }
+
+        [JsonProperty("advanced_settings")]
+        public List<DirectionalStyleSetting> AdvancedSettings { get; set; }
+    }
+
+    // kind: choice | bool | color (a color also takes any #rrggbb). Values keep their JSON
+    // type (a pixel resolution is a number), so they are sent back exactly as listed.
+    [Serializable]
+    public class DirectionalStyleSetting
+    {
+        [JsonProperty("name")]
+        public string Name { get; set; }
+
+        [JsonProperty("label")]
+        public string Label { get; set; }
+
+        [JsonProperty("kind")]
+        public string Kind { get; set; }
+
+        [JsonProperty("description")]
+        public string Description { get; set; }
+
+        [JsonProperty("options")]
+        public List<DirectionalStyleOption> Options { get; set; }
+
+        [JsonProperty("default")]
+        public JToken Default { get; set; }
+    }
+
+    [Serializable]
+    public class DirectionalStyleOption
+    {
+        [JsonProperty("label")]
+        public string Label { get; set; }
+
+        [JsonProperty("value")]
+        public JToken Value { get; set; }
+    }
+
+    // GET /assets/sprite/animation-presets
+    [Serializable]
+    public class AnimationPresetsResponse
+    {
+        [JsonProperty("animations")]
+        public List<AnimationPreset> Animations { get; set; }
+    }
+
+    [Serializable]
+    public class AnimationPreset
+    {
+        [JsonProperty("id")]
+        public string Id { get; set; }
+
+        [JsonProperty("name")]
+        public string Name { get; set; }
+
+        [JsonProperty("category")]
+        public string Category { get; set; }
+
+        [JsonProperty("description")]
+        public string Description { get; set; }
+
+        [JsonProperty("preview_url")]
+        public string PreviewUrl { get; set; }
+    }
+
+    [Serializable]
+    public class DirectionalPreviewResponse
+    {
+        [JsonProperty("previews")]
+        public List<DirectionalPreview> Previews { get; set; }
+    }
+
+    [Serializable]
+    public class DirectionalPreview
+    {
+        [JsonProperty("direction")]
+        public string Direction { get; set; }
+
+        [JsonProperty("frame_urls")]
+        public List<string> FrameUrls { get; set; }
+
+        [JsonProperty("num_frames")]
+        public int NumFrames { get; set; }
+
+        [JsonProperty("fps")]
+        public float Fps { get; set; }
+    }
+
+    [Serializable]
+    public class DirectionalSpritesResponse
+    {
+        [JsonProperty("sheets")]
+        public List<DirectionalSheet> Sheets { get; set; }
+    }
+
+    [Serializable]
+    public class DirectionalSheet
+    {
+        [JsonProperty("direction")]
+        public string Direction { get; set; }
+
+        [JsonProperty("spritesheet_url")]
+        public string SpritesheetUrl { get; set; }
+
+        [JsonProperty("gif_url")]
+        public string GifUrl { get; set; }
+
+        [JsonProperty("num_frames")]
+        public int NumFrames { get; set; }
+
+        [JsonProperty("num_cols")]
+        public int NumCols { get; set; }
+
+        [JsonProperty("num_rows")]
+        public int NumRows { get; set; }
+
+        [JsonProperty("fps")]
+        public float Fps { get; set; }
+    }
+
+    [Serializable]
+    public class DirectionalStillsResponse
+    {
+        [JsonProperty("images")]
+        public List<DirectionalStill> Images { get; set; }
+    }
+
+    [Serializable]
+    public class DirectionalStill
+    {
+        [JsonProperty("direction")]
+        public string Direction { get; set; }
+
+        [JsonProperty("url")]
+        public string Url { get; set; }
+
+        [JsonProperty("width")]
+        public int Width { get; set; }
+
+        [JsonProperty("height")]
+        public int Height { get; set; }
     }
 
     // GET /assets/jobs/{id} (and the 202 a generation endpoint answers with).

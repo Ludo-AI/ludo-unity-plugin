@@ -14,9 +14,11 @@ public class Contract
     readonly JsonObject spec;
 
     public readonly List<string> PendingFields = new();
+    public readonly string Dir;
 
     public Contract(string path)
     {
+        Dir = Path.GetDirectoryName(Path.GetFullPath(path))!;
         spec = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
         // contract/pending.json: fields merged in the backend but not yet in the published spec.
         string pending = Path.Combine(Path.GetDirectoryName(path)!, "pending.json");
@@ -64,9 +66,11 @@ public class Contract
     public JsonObject Property(string method, string path, string field) =>
         RequestSchema(method, path)?["properties"]?[field]?.AsObject();
 
+    // An array field's enum is its items' enum (directions).
     public List<string> Enum(string method, string path, string field)
     {
-        var e = Property(method, path, field)?["enum"]?.AsArray();
+        var prop = Property(method, path, field);
+        var e = (prop?["enum"] ?? prop?["items"]?["enum"])?.AsArray();
         return e?.Select(v => v!.ToJsonString().Trim('"')).ToList();
     }
 
@@ -122,6 +126,18 @@ public class Contract
                 if (!isNumber) { errors.Add($"'{name}' must be a number, got {kind}"); return; }
                 if ((string)prop["format"] == "integer" && value!.GetValue<double>() % 1 != 0) { errors.Add($"'{name}' must be a whole number, got {value.ToJsonString()}"); return; }
                 break;
+            case "object":
+                if (kind != System.Text.Json.JsonValueKind.Object) errors.Add($"'{name}' must be an object, got {kind}");
+                return;
+            case "array":
+                if (kind != System.Text.Json.JsonValueKind.Array) { errors.Add($"'{name}' must be an array, got {kind}"); return; }
+                var items = value!.AsArray();
+                if (prop["minItems"] != null && items.Count < prop["minItems"]!.GetValue<int>()) errors.Add($"'{name}' has fewer than {prop["minItems"]} items");
+                if (prop["maxItems"] != null && items.Count > prop["maxItems"]!.GetValue<int>()) errors.Add($"'{name}' has more than {prop["maxItems"]} items");
+                if ((bool?)prop["uniqueItems"] == true && items.Select(i => i!.ToJsonString()).Distinct().Count() != items.Count) errors.Add($"'{name}' repeats an item");
+                if (prop["items"] is JsonObject itemSchema)
+                    for (int i = 0; i < items.Count; i++) CheckValue($"{name}[{i}]", itemSchema, items[i], errors);
+                return;
         }
         var e = prop["enum"]?.AsArray();
         if (e != null)

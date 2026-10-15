@@ -83,11 +83,12 @@ public static class Scenarios
     // extension that matches its content.
     static string ClickSave(Ctx c, PluginDriver p, string label, string expectKind)
     {
-        var before = new HashSet<string>(Directory.GetFiles(c.OutDir, "*", SearchOption.AllDirectories));
+        // New files, or files rewritten (two saves in the same second share a name).
+        var before = Directory.GetFiles(c.OutDir, "*", SearchOption.AllDirectories).ToDictionary(f => f, File.GetLastWriteTimeUtc);
         int dialogsBefore = Harness.Dialogs.Count;
         p.Click(label);
         c.Require(p.RunUntilIdle(60), $"'{label}' never finished");
-        var added = Directory.GetFiles(c.OutDir, "*", SearchOption.AllDirectories).Where(f => !before.Contains(f)).ToList();
+        var added = Directory.GetFiles(c.OutDir, "*", SearchOption.AllDirectories).Where(f => !before.TryGetValue(f, out var t) || File.GetLastWriteTimeUtc(f) != t).ToList();
         var dialogs = Harness.Dialogs.Skip(dialogsBefore).ToList();
         foreach (var d in dialogs.Where(d => d.Title.Contains("Error") || d.Title.Contains("Failed"))) c.Failures.Add($"'{label}': dialog {d}");
         if (added.Count == 0) { c.Failures.Add($"'{label}' saved no file (dialogs: {string.Join(" / ", dialogs)})"); return null; }
@@ -329,6 +330,319 @@ public static class Scenarios
         c.Check((string)body?["delivery"] == "angry, shouting", $"delivery not sent ({body})");
     }
 
+
+    // ---------------------------------------------------------------- 3D: hero / rig in one call
+
+    static void Model3DHeroRig(Ctx c)
+    {
+        var p = c.NewPlugin();
+        c.Require(p.Has("model3DModel") && p.Has("model3DRig"), "no model choice / rig option on Create 3D (fields model3DModel, model3DRig)");
+        Tab(p, "Models", "currentModelTab", "Create");
+        p.Set("model3DImageUrl", FakeFile(c, "front.png"));
+        p.Set("model3DBackImageUrl", FakeFile(c, "back.png"));
+
+        // prop: the back view goes; no rig fields unless asked
+        p.Click("Create 3D Model");
+        c.Require(p.RunUntilIdle(30), "prop creation never finished: " + p.Status);
+        var body = LastBody(c, "/assets/3d-model");
+        c.Check((string)body?["model"] == "prop", $"model not sent as prop ({body})");
+        c.Check(body?["back_image"] != null, "prop: back view not sent");
+        c.Check(body?["rig"] == null && body?["rig_type"] == null, $"rig fields sent without Also Rig ({body})");
+
+        // hero: front image only, even with a back view still in the field
+        p.Set("model3DModel", "hero");
+        p.Set("model3DRig", true);
+        p.Click("Create 3D Model");
+        c.Require(p.RunUntilIdle(30), "hero creation never finished: " + p.Status);
+        body = LastBody(c, "/assets/3d-model");
+        c.Check((string)body?["model"] == "hero", $"model not sent as hero ({body})");
+        c.Check(body?["back_image"] == null, "hero: back_image sent (the API answers it with a 400)");
+        c.Check(body?["rig"]?.GetValue<bool>() == true && (string)body?["rig_type"] == "humanoid_template" && (string)body?["joint_naming"] == "mixamo", $"rig fields not sent ({body})");
+
+        // a rigged result is ready for the next steps without the Rig tab
+        var rigged = p.Get("currentRigged3DModel");
+        c.Check(rigged != null && (string)PluginDriver.Prop(rigged, "ModelUrl") == (string)PluginDriver.Prop(p.Get("current3DModel"), "ModelUrl"), "a model rigged on create did not become the rigged model");
+        c.Check(ButtonShown(p, "Use for Animation") && !Harness.Buttons.Contains("Use for Rigging"), "rigged on create still offers Rigging instead of Animation");
+        p.Click("Use for Directional Sprites");
+        c.Check(p.Get("currentModelTab").ToString() == "Directional", "'Use for Directional Sprites' did not switch tabs");
+        c.Check(p.Get<string>("directionalModelInput") == (string)PluginDriver.Prop(p.Get("current3DModel"), "ModelUrl"), "the created model did not reach Directional Sprites");
+        c.CheckClean(p, "/assets/3d-model");
+    }
+
+    // ---------------------------------------------------------------- Directional Sprites
+
+    static object JVal(object v) => Activator.CreateInstance(Type.GetType("Newtonsoft.Json.Linq.JValue, Newtonsoft.Json", true)!, v);
+
+    static PluginDriver DirectionalPlugin(Ctx c, FakeLudoApi.Behavior b = null)
+    {
+        var p = c.NewPlugin(b);
+        c.Require(p.Has("directionalModelInput"), "no Directional Sprites tab in this build");
+        Tab(p, "Models", "currentModelTab", "Directional");
+        c.Require(p.RunUntilIdle(20), "styles never loaded");
+        p.Gui();
+        return p;
+    }
+
+    static void Directional(Ctx c)
+    {
+        var p = DirectionalPlugin(c);
+        var styles = p.Get("directionalStyles");
+        c.Require(styles != null, $"styles not loaded: {p.Get("directionalStylesError")}");
+        c.Check(PluginDriver.Count(PluginDriver.Prop(styles, "Styles")) >= 10, "fewer styles than the API lists");
+
+        p.Set("directionalModelInput", FakeFile(c, "rigged.glb"));
+        p.Set("directionalAnimationSource", "preset");
+        p.Gui();
+        c.Require(p.RunUntilIdle(20), "presets never loaded");
+        p.Gui();
+        c.Require(PluginDriver.Count(p.Get("animationPresets")) == 3, $"presets: {PluginDriver.Count(p.Get("animationPresets"))}/3");
+        c.Check(p.Get<string>("directionalPresetId") == "walk_relaxed", $"first preset not picked: {p.Get<string>("directionalPresetId")}");
+        p.Set("directionalPresetCategory", "Poses: Idles & Fidgets");
+        p.Gui();
+        c.Check(p.Get<string>("directionalPresetId") == "idle_breathing", $"category change did not pick its preset: {p.Get<string>("directionalPresetId")}");
+        p.Set("directionalCropLoop", "on");
+
+        // a pixel style, with a numeric choice, a custom colour and an advanced bool changed
+        p.Set("directionalStyleId", "pixel_art");
+        p.Gui();
+        var prm = (IDictionary)p.Get("directionalStyleParams");
+        prm["resolution"] = JVal(96L);
+        prm["outline"] = JVal("#ff0000");
+        prm["palette"] = JVal("standard"); // the default: must not be sent
+        p.Set("directionalShowAdvanced", true);
+        prm["highlights"] = JVal(false);
+        p.Gui();
+        p.Set("directionalDirections", new List<string> { "S", "SW", "N" });
+
+        p.Click("Preview (free)");
+        c.Require(p.RunUntilIdle(30), "preview never finished: " + p.Status);
+        c.Check(PluginDriver.Count(p.Get("directionalPreviews")) == 3, $"previews: {PluginDriver.Count(p.Get("directionalPreviews"))}/3; status {p.Status}");
+        var frames = (IDictionary)p.Get("directionalPreviewFrames");
+        foreach (var d in new[] { "S", "SW", "N" })
+        {
+            var list = frames.Contains(d) ? (IList)frames[d]! : null;
+            c.Check(list != null && list.Count == 3 && list.Cast<object>().All(t => t != null), $"preview {d}: frames not loaded");
+        }
+        var body = LastBody(c, "/assets/sprite/directional-preview");
+        c.Require(body != null, "no preview request recorded");
+        c.Check(body["directions"]!.ToJsonString() == "[\"S\",\"SW\",\"N\"]", $"directions {body["directions"]!.ToJsonString()}");
+        c.Check(body["style_params"]?["resolution"]?.GetValueKind() == System.Text.Json.JsonValueKind.Number && body["style_params"]!["resolution"]!.GetValue<double>() == 96, $"resolution not sent as the number 96: {body["style_params"]?.ToJsonString()}");
+        c.Check((string)body["style_params"]?["outline"] == "#ff0000", $"custom colour not sent: {body["style_params"]?.ToJsonString()}");
+        c.Check(body["style_params"]?["palette"] == null, $"a default setting was sent: {body["style_params"]?.ToJsonString()}");
+        c.Check(body["style_params"]?["highlights"]?.GetValueKind() == System.Text.Json.JsonValueKind.False, $"advanced bool not sent: {body["style_params"]?.ToJsonString()}");
+        c.Check((string)body["preset_id"] == "idle_breathing" && body["crop_loop"]?.GetValue<bool>() == true, $"preset not sent ({body})");
+        c.Check(body["num_frames"] == null && body["target_frame_size"] == null, "preview sent sheet-only fields");
+
+        p.Click("Render Spritesheets (3 credits)");
+        c.Require(p.RunUntilIdle(30), "spritesheets never finished: " + p.Status);
+        c.Require(PluginDriver.Count(p.Get("directionalSheets")) == 3, $"sheets: {PluginDriver.Count(p.Get("directionalSheets"))}/3; status {p.Status}; dialogs {string.Join(" / ", p.Dialogs)}");
+        body = LastBody(c, "/assets/sprite/directional");
+        c.Check(body?["target_frame_size"]?.GetValue<double>() == 640 && body?["num_frames"]?.GetValue<double>() == 36, $"sheet size/frames ({body})");
+        c.Check(body?["loop"] == null, "loop sent while left at the animation's default");
+        ClickSave(c, p, "Save Spritesheet", "png");
+        p.Click("Save All Spritesheets");
+        c.Require(p.RunUntilIdle(30), "save-all never finished");
+        var folder = Directory.GetDirectories(c.OutDir, "folder-*").OrderBy(Directory.GetCreationTimeUtc).Last();
+        var saved = Directory.GetFiles(folder);
+        c.Check(saved.Length == 3 && saved.All(f => f.EndsWith(".png")), $"save-all wrote {saved.Length} files: {string.Join(", ", saved.Select(Path.GetFileName))}");
+
+        p.Click("Render Stills (1.5 credits)");
+        c.Require(p.RunUntilIdle(30), "stills never finished: " + p.Status);
+        c.Require(PluginDriver.Count(p.Get("directionalStills")) == 3, $"stills: {PluginDriver.Count(p.Get("directionalStills"))}/3");
+        ClickSave(c, p, "Save Still", "png");
+        p.Click("Animate This Still");
+        c.Check(p.Get("currentTab").ToString() == "Sprites" && p.Get("currentSpriteTab").ToString() == "ImageToSpritesheet", "'Animate This Still' did not open Animate Sprite");
+        c.Check((p.Get<string>("spritesheetInitialImageUrl") ?? "").Contains("still-S"), "the still did not reach Animate Sprite");
+
+        // every request: contract, dropped fields (stills take no animation), style params
+        c.CheckClean(p);
+    }
+
+    static void DirectionalSources(Ctx c)
+    {
+        var p = DirectionalPlugin(c, new FakeLudoApi.Behavior { PollsUntilDone = 1, PollAfterMs = 1 });
+        p.Set("directionalModelInput", FakeFile(c, "rigged.glb"));
+
+        // none: a still pose, no animation or travel fields, no frame count
+        p.Click("Render Spritesheets (1 credit)");
+        c.Require(p.RunUntilIdle(20), "still-pose sheet never finished");
+        var body = LastBody(c, "/assets/sprite/directional");
+        foreach (var f in new[] { "animation_url", "preset_id", "model_animation", "keep_horizontal_travel", "num_frames" })
+            c.Check(body?[f] == null, $"no animation: '{f}' sent ({body})");
+
+        // an animation inside the GLB
+        p.Set("directionalAnimationSource", "model_animation");
+        p.Gui();
+        c.Check(!ButtonEnabled(p, "Render Spritesheets (1 credit)"), "can render with an empty animation name");
+        p.Set("directionalModelAnimation", "Walk");
+        p.Set("directionalLoop", "off");
+        p.Click("Render Spritesheets (1 credit)");
+        c.Require(p.RunUntilIdle(20), "model_animation sheet never finished");
+        body = LastBody(c, "/assets/sprite/directional");
+        c.Check((string)body?["model_animation"] == "Walk" && body?["loop"]?.GetValue<bool>() == false, $"model_animation / loop not sent ({body})");
+
+        // from Animate 3D: model and its clip arrive together
+        Tab(p, "Models", "currentModelTab", "Animate");
+        p.Set("model3DAnimateModelInput", FakeFile(c, "rigged-hero.glb"));
+        p.Set("model3DAnimateNumVariants", 2);
+        p.Click("Animate 3D Model");
+        c.Require(p.RunUntilIdle(20), "3D animation never finished");
+        p.Click("Use for Directional Sprites");
+        c.Check(p.Get("currentModelTab").ToString() == "Directional", "Animate's 'Use for Directional Sprites' did not switch tabs");
+        c.Check(p.Get<string>("directionalModelInput") == FakeFile(c, "rigged-hero.glb"), "the animated model did not come along");
+        string clip = (string)PluginDriver.Prop(((IList)p.Get("current3DAnimations"))[0], "GlbUrl");
+        c.Check(p.Get<string>("directionalAnimationSource") == "animation" && p.Get<string>("directionalAnimationUrl") == clip, "the clip did not come along");
+        p.Set("directionalGif", true);
+        p.Click("Render Spritesheets (1 credit)");
+        c.Require(p.RunUntilIdle(20), "animation_url sheet never finished");
+        body = LastBody(c, "/assets/sprite/directional");
+        c.Check((string)body?["animation_url"] == clip && body?["gif"]?.GetValue<bool>() == true, $"animation_url / gif not sent ({body})");
+        c.Check(ButtonShown(p, "Save GIF"), "gif returned but no Save GIF button");
+        ClickSave(c, p, "Save GIF", "gif");
+
+        // directions: none chosen means nothing to render
+        p.Set("directionalDirections", new List<string>());
+        c.Check(!ButtonEnabled(p, "Preview (free)"), "can preview with no direction");
+        p.Click("All 8");
+        c.Check(PluginDriver.Count(p.Get("directionalDirections")) == 8, "'All 8' did not pick every direction");
+        c.CheckClean(p);
+    }
+
+    static void DirectionalPreviewSuperseded(Ctx c)
+    {
+        var p = DirectionalPlugin(c, new FakeLudoApi.Behavior { PreviewSuperseded = true });
+        p.Set("directionalModelInput", FakeFile(c, "model.glb"));
+        p.Click("Preview (free)");
+        c.Require(p.RunUntilIdle(20), "stuck after a superseded preview");
+        c.Check(p.ErrorDialogs.Count == 0, $"a replaced preview is not an error: {string.Join(" / ", p.Dialogs)}");
+        c.Check(p.Status.Contains("replaced"), $"status does not say the preview was replaced: '{p.Status}'");
+    }
+
+    static void DirectionalStylesUnavailable(Ctx c)
+    {
+        var p = c.NewPlugin(new FakeLudoApi.Behavior { StylesStatus = 503 });
+        Tab(p, "Models", "currentModelTab", "Directional");
+        c.Require(p.RunUntilIdle(20), "styles request never finished");
+        p.Gui();
+        c.Check(p.Get("directionalStylesError") != null && ButtonShown(p, "Retry Loading Styles"), "no message / retry when styles fail");
+        c.Api.B.StylesStatus = 200;
+        p.Click("Retry Loading Styles");
+        p.Gui();
+        c.Require(p.RunUntilIdle(20), "styles retry never finished");
+        c.Check(p.Get("directionalStyles") != null, "retry did not load the styles");
+    }
+
+    static bool ButtonEnabled(PluginDriver p, string label)
+    {
+        try { Harness.ClickButton = label; p.Gui(); bool clicked = Harness.ClickButton == null; Harness.ClickButton = null; return clicked; }
+        finally { Harness.ClickButton = null; }
+    }
+
+    // Live only (~2 credits): real styles/presets/preview/sheet/still/upscale responses parse.
+    // LUDO_LIVE_MODEL is a humanoid_template-rigged GLB, LUDO_LIVE_ANIMATION a clip for it.
+    static void DirectionalLive(Ctx c)
+    {
+        c.Require(c.Live, "live-only scenario");
+        string model = Environment.GetEnvironmentVariable("LUDO_LIVE_MODEL");
+        string anim = Environment.GetEnvironmentVariable("LUDO_LIVE_ANIMATION");
+        c.Require(!string.IsNullOrEmpty(model) && !string.IsNullOrEmpty(anim), "set LUDO_LIVE_MODEL and LUDO_LIVE_ANIMATION");
+        var p = DirectionalPlugin(c);
+        c.Require(p.Get("directionalStyles") != null, $"styles: {p.Get("directionalStylesError")}");
+        p.Set("directionalModelInput", model);
+        p.Set("directionalAnimationSource", "preset");
+        p.Gui();
+        c.Require(p.RunUntilIdle(60), "presets never loaded");
+        p.Gui();
+        c.Require(PluginDriver.Count(p.Get("animationPresets")) > 100, $"presets: {PluginDriver.Count(p.Get("animationPresets"))}");
+        p.Set("directionalPresetCategory", "Movement: Walking");
+        p.Gui();
+        p.Set("directionalStyleId", "pixel_art");
+        p.Gui();
+        ((IDictionary)p.Get("directionalStyleParams"))["resolution"] = JVal(96L);
+        p.Click("Preview (free)");
+        c.Require(p.RunUntilIdle(600), "preview never finished: " + p.Status);
+        var previews = p.Get("directionalPreviews");
+        c.Require(PluginDriver.Count(previews) == 1, $"previews: {PluginDriver.Count(previews)}; status {p.Status}; dialogs {string.Join(" / ", p.Dialogs)}");
+        var frameUrls = PluginDriver.Prop(((IList)previews!)[0], "FrameUrls");
+        c.Note($"preview: {PluginDriver.Count(frameUrls)} frames, preset {p.Get<string>("directionalPresetId")}");
+        c.Check(PluginDriver.Count(frameUrls) > 1, "an animated preview came back with one frame");
+
+        p.Set("directionalAnimationSource", "animation");
+        p.Set("directionalAnimationUrl", anim);
+        p.Set("directionalFrameSize", 256);
+        p.Set("directionalNumFrames", 16);
+        p.Click("Render Spritesheets (1 credit)");
+        c.Require(p.RunUntilIdle(1200), "sheet never finished: " + p.Status);
+        var sheets = p.Get("directionalSheets");
+        c.Require(PluginDriver.Count(sheets) == 1, $"sheets: {PluginDriver.Count(sheets)}; status {p.Status}; dialogs {string.Join(" / ", p.Dialogs)}");
+        var sheet = ((IList)sheets!)[0];
+        c.Note($"sheet: {PluginDriver.Prop(sheet, "NumFrames")} frames, {PluginDriver.Prop(sheet, "NumCols")}x{PluginDriver.Prop(sheet, "NumRows")}, {PluginDriver.Prop(sheet, "Fps")} fps");
+        c.Check((int)PluginDriver.Prop(sheet, "NumCols")! > 0 && (float)PluginDriver.Prop(sheet, "Fps")! > 0, "sheet grid / fps not read");
+        ClickSave(c, p, "Save Spritesheet", null);
+
+        p.Click("Render Stills (0.5 credits)");
+        c.Require(p.RunUntilIdle(1200), "still never finished: " + p.Status);
+        var stills = p.Get("directionalStills");
+        c.Require(PluginDriver.Count(stills) == 1, $"stills: {PluginDriver.Count(stills)}; status {p.Status}; dialogs {string.Join(" / ", p.Dialogs)}");
+        var still = ((IList)stills!)[0];
+        c.Note($"still: {PluginDriver.Prop(still, "Width")}x{PluginDriver.Prop(still, "Height")}");
+
+        // Upscale the still (under 2048px): a new image comes back.
+        p.Set("upscaleImageInput", (string)PluginDriver.Prop(still, "Url"));
+        Tab(p, "Sprites", "currentSpriteTab", "Upscale");
+        p.Click("Upscale Image (0.5 credits)");
+        c.Require(p.RunUntilIdle(600), "upscale never finished: " + p.Status);
+        var up = p.Get("currentUpscaledImage");
+        c.Require(up != null && !string.IsNullOrEmpty((string)PluginDriver.Prop(up, "Url")), $"no upscaled image; status {p.Status}; dialogs {string.Join(" / ", p.Dialogs)}");
+        c.Check((string)PluginDriver.Prop(up, "Url") != (string)PluginDriver.Prop(still, "Url"), "upscale returned the source url");
+        c.Note("upscaled: " + PluginDriver.Prop(up, "Url"));
+        c.CheckClean(p);
+    }
+
+    // ---------------------------------------------------------------- Upscale Image
+
+    static void Upscale(Ctx c)
+    {
+        var p = c.NewPlugin();
+        c.Require(p.Has("upscaleImageInput"), "no Upscale Image in this build");
+        // from an image card
+        Tab(p, "Sprites", "currentSpriteTab", "Image");
+        p.Set("imagePrompt", "a potion");
+        p.Click("Generate Image(s)");
+        c.Require(p.RunUntilIdle(30), "image generation never finished");
+        var image = ((IList)p.Get("generatedImages"))[0];
+        c.Check((int)PluginDriver.Prop(image, "Width")! > 0, "image size not taken from its preview");
+        p.Click("Upscale");
+        c.Check(p.Get("currentSpriteTab").ToString() == "Upscale", "'Upscale' did not open Upscale Image");
+        c.Check(p.Get<string>("upscaleImageInput") == (string)PluginDriver.Prop(image, "Url"), "the image did not reach Upscale Image");
+        p.Click("Upscale Image (0.5 credits)");
+        c.Require(p.RunUntilIdle(30), "upscale never finished: " + p.Status);
+        var result = p.Get("currentUpscaledImage");
+        c.Require(result != null && !string.IsNullOrEmpty((string)PluginDriver.Prop(result, "Url")), $"no upscaled image; status {p.Status}; dialogs {string.Join(" / ", p.Dialogs)}");
+        c.Check(PluginDriver.Count(p.Get("generatedImages")) == 1, "upscaling changed the generated images list");
+        ClickSave(c, p, "Save Upscaled Image", "png");
+
+        // from the project: the file goes unchanged (no resize, no re-encode)
+        string file = Path.Combine(c.OutDir, "to-upscale.png");
+        var bytes = UnityEngine.FakeImage.Png(1500, 900);
+        File.WriteAllBytes(file, bytes);
+        Harness.OpenFilePanel = (title, ext) => title.Contains("Upscale") ? file : "";
+        p.Click("Select from Project");
+        c.Check(p.Get<string>("upscaleImageInput") == "data:image/png;base64," + Convert.ToBase64String(bytes), "project image was changed before upload");
+        c.Check(p.Get<int>("upscaleSourceWidth") == 1500, "project image size not read");
+        p.Click("Upscale Image (0.5 credits)");
+        c.Require(p.RunUntilIdle(30), "project upscale never finished");
+        c.Check((string)LastBody(c, "/assets/image/upscale")?["image"] == "data:image/png;base64," + Convert.ToBase64String(bytes), "project image not sent as is");
+
+        // 2048px or more on the longest side: refused before any request
+        File.WriteAllBytes(file, UnityEngine.FakeImage.Png(2048, 1024));
+        p.Click("Select from Project");
+        int posts = c.Api.Posts("/api/assets/image/upscale").Count;
+        c.Check(!ButtonEnabled(p, "Upscale Image (0.5 credits)"), "a 2048px image can be sent for upscaling");
+        c.Check(c.Api.Posts("/api/assets/image/upscale").Count == posts, "an oversize image was sent");
+        c.CheckClean(p);
+    }
+
     // ---------------------------------------------------------------- failure paths
 
     static void JobFails(Ctx c)
@@ -482,15 +796,19 @@ public static class Scenarios
         var p = c.NewPlugin();
         var screens = new (string tab, string field, string[] subs)[]
         {
-            ("Sprites", "currentSpriteTab", new[] { "Image", "ImageToSpritesheet" }),
-            ("Models", "currentModelTab", new[] { "Create", "Rig", "Animate" }),
+            ("Sprites", "currentSpriteTab", new[] { "Image", "ImageToSpritesheet", "Upscale" }),
+            ("Models", "currentModelTab", new[] { "Create", "Rig", "Animate", "Directional" }),
             ("Audio", "currentAudioTab", new[] { "SoundEffect", "Music", "Voice", "Speech", "SpeechPreset" }),
             ("Settings", null, new string[] { null }),
         };
         foreach (var (tab, field, subs) in screens)
             foreach (var sub in subs)
             {
-                try { Tab(p, tab, field, sub); p.Gui(); }
+                try
+                {
+                    if (field != null && sub != null && !Enum.GetNames(p.Get(field).GetType()).Contains(sub)) { c.Note($"{tab}/{sub}: not in this build"); continue; }
+                    Tab(p, tab, field, sub); p.Gui();
+                }
                 catch (Exception e) { c.Failures.Add($"{tab}/{sub}: OnGUI threw {e.GetType().Name}: {e.Message}"); }
             }
         // No API key: the key screen must render and nothing else.
@@ -528,6 +846,13 @@ public static class Scenarios
         ("marginModeOptions", "/assets/sprite/animate", "margin_ratio_mode"),
         ("textureSizeOptions", "/assets/3d-model", "texture_size"),
         ("textureTypeOptions", "/assets/3d-model", "texture_type"),
+        ("model3DModelOptions", "/assets/3d-model", "model"),
+        ("model3DRigTypeOptions", "/assets/3d-model", "rig_type"),
+        ("model3DJointNamingOptions", "/assets/3d-model", "joint_naming"),
+        ("directionalPerspectiveOptions", "/assets/sprite/directional", "perspective"),
+        ("directionalPerspectiveOptions", "/assets/sprite/directional-stills", "perspective"),
+        ("directionalPerspectiveOptions", "/assets/sprite/directional-preview", "perspective"),
+        ("directionalDirectionOptions", "/assets/sprite/directional", "directions"),
         ("model3DRigTypeOptions", "/assets/3d-model/rig", "rig_type"),
         ("model3DJointNamingOptions", "/assets/3d-model/rig", "joint_naming"),
         ("model3DAnimateModeOptions", "/assets/3d-model/animate", "mode"),
@@ -624,6 +949,13 @@ public static class Scenarios
         new("generate", "3D: create -> rig -> animate, with downloads", Model3DChain, LiveToo: true),
         new("generate", "3D: optional back view (URL, from project, clear)", Model3DBackView),
         new("live", "3D: back view accepted by the live API", Model3DBackViewLive, LiveToo: true),
+        new("generate", "3D: prop/hero model choice, rig on create", Model3DHeroRig),
+        new("generate", "directional sprites: styles, preset, preview, sheets, stills, saves", Directional),
+        new("generate", "directional sprites: animation sources and hand-offs", DirectionalSources),
+        new("failure", "directional preview replaced by a newer one (204)", DirectionalPreviewSuperseded),
+        new("failure", "directional styles unavailable: message and retry", DirectionalStylesUnavailable),
+        new("generate", "upscale image: from a card, from the project, size limit", Upscale),
+        new("live", "directional sprites + upscale against the live API", DirectionalLive, LiveToo: true),
         new("generate", "audio: sound effect", c => Audio(c, "SoundEffect", "/audio/sound-effect", p => { p.Set("soundEffectDescription", "sword clash"); p.Set("soundEffectDuration", 2f); }, "Generate Sound Effect", "currentSoundEffect", "Save Sound Effect"), LiveToo: true),
         new("generate", "audio: music", c => Audio(c, "Music", "/audio/music", p => p.Set("musicDescription", "calm village theme"), "Generate Music", "currentMusic", "Save Music"), LiveToo: true),
         new("generate", "audio: voice", c => Audio(c, "Voice", "/audio/voice", p => { p.Set("voiceDescription", "old wizard"); p.Set("voiceText", "You shall not pass"); }, "Generate Voice", "currentVoice", "Save Voice"), LiveToo: true),

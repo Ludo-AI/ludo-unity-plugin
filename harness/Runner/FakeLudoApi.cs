@@ -28,6 +28,8 @@ public class FakeLudoApi : IDisposable
         public int ResultFileStatus = 200;      // status for downloaded result files
         public int SubmitGatewayErrors;         // first N submits: load balancer 502, nothing created
         public int LoseSubmitResponses;         // next N submits: job IS created, response lost as a 502
+        public bool PreviewSuperseded;          // the Directional Sprites preview answers 204 (a newer one won)
+        public int StylesStatus = 200;          // status for GET directional-styles
     }
 
     public class Request
@@ -56,7 +58,11 @@ public class FakeLudoApi : IDisposable
         "/assets/image", "/assets/sprite/animate", "/assets/3d-model", "/assets/3d-model/rig",
         "/assets/3d-model/animate", "/audio/sound-effect", "/audio/music", "/audio/voice",
         "/audio/speech", "/audio/speech-preset",
+        "/assets/sprite/directional", "/assets/sprite/directional-stills", "/assets/image/upscale",
     };
+
+    // Free synchronous POSTs: validated like the rest, answered at once, never a job.
+    static readonly string[] SyncPaths = { "/assets/sprite/directional-preview" };
 
     readonly HttpListener listener = new();
     readonly Contract contract;
@@ -156,6 +162,48 @@ public class FakeLudoApi : IDisposable
 
             string api = path.StartsWith("/api/") ? path.Substring(4) : path;
 
+            if (req.HttpMethod == "GET" && api == "/assets/sprite/directional-styles")
+            {
+                if (B.StylesStatus != 200) { await Json(ctx, rec, B.StylesStatus, new JsonObject { ["message"] = "Styles are unavailable" }); return; }
+                // A snapshot of the live list (contract/directional-styles.json), thumbnails served here.
+                var styles = JsonNode.Parse(File.ReadAllText(Path.Combine(contract.Dir, "directional-styles.json")))!.AsObject();
+                foreach (var st in styles["styles"]!.AsArray()) st!["thumbnail_url"] = F($"thumb-{st["id"]}.webp");
+                await Json(ctx, rec, 200, styles);
+                return;
+            }
+
+            if (req.HttpMethod == "GET" && api == "/assets/sprite/animation-presets")
+            {
+                var anims = new JsonArray();
+                foreach (var (id, name, cat) in new[] { ("walk_relaxed", "Walk Forward (Relaxed)", "Movement: Walking"), ("run_fast", "Run Forward (Fast)", "Movement: Running & Sprinting"), ("idle_breathing", "Idle (Breathing)", "Poses: Idles & Fidgets") })
+                    anims.Add(new JsonObject { ["id"] = id, ["name"] = name, ["category"] = cat, ["description"] = name + ".", ["duration"] = 3, ["preview_url"] = F($"preset-{id}.mp4") });
+                await Json(ctx, rec, 200, new JsonObject { ["animations"] = anims, ["perspectives"] = new JsonArray("side"), ["directions"] = new JsonArray("N", "NE", "E", "SE", "S", "SW", "W", "NW") });
+                return;
+            }
+
+            if (req.HttpMethod == "POST" && SyncPaths.Contains(api))
+            {
+                string text = await new StreamReader(req.InputStream, Encoding.UTF8).ReadToEndAsync();
+                var body = JsonNode.Parse(text)!.AsObject();
+                rec.Body = body;
+                var findings = contract.Validate("POST", api, body);
+                CheckStyleParams(body, findings);
+                rec.Findings = findings;
+                if (!findings.Ok) { await Json(ctx, rec, 400, new JsonObject { ["message"] = "Request validation failed: " + string.Join("; ", findings.Errors) }); return; }
+                if (body.ContainsKey("request_id")) lock (Violations) Violations.Add($"POST {api} sends request_id: the preview is not a job");
+                if (B.PreviewSuperseded) { rec.Status = 204; ctx.Response.StatusCode = 204; ctx.Response.Close(); return; }
+                var previews = new JsonArray();
+                foreach (var d in body["directions"]?.AsArray() ?? new JsonArray(JsonValue.Create("SW")))
+                    previews.Add(new JsonObject
+                    {
+                        ["direction"] = (string)d, ["width"] = 256, ["height"] = 256, ["num_frames"] = 3, ["fps"] = 12,
+                        ["frame_urls"] = new JsonArray(F($"preview-{d}-0.webp"), F($"preview-{d}-1.webp"), F($"preview-{d}-2.webp")),
+                        ["render_3d"] = new JsonObject { ["style_id"] = (string)body["style_id"] ?? "render_3d", ["style_version"] = 1, ["direction"] = (string)d },
+                    });
+                await Json(ctx, rec, 200, new JsonObject { ["previews"] = previews });
+                return;
+            }
+
             if (req.HttpMethod == "POST" && GenerationPaths.Contains(api))
             {
                 string text = await new StreamReader(req.InputStream, Encoding.UTF8).ReadToEndAsync();
@@ -184,9 +232,33 @@ public class FakeLudoApi : IDisposable
         }
     }
 
+    // Like the renderer: style_params must name the style's settings, each with one of its
+    // option values (same JSON type), a bool for a bool, or #rrggbb for a color.
+    void CheckStyleParams(JsonObject body, Contract.Findings findings)
+    {
+        if (!body.ContainsKey("style_id") && !body.ContainsKey("style_params")) return;
+        var styles = JsonNode.Parse(File.ReadAllText(Path.Combine(contract.Dir, "directional-styles.json")))!["styles"]!.AsArray();
+        string id = (string)body["style_id"] ?? "render_3d";
+        var style = styles.FirstOrDefault(st => (string)st!["id"] == id);
+        if (style == null) { findings.Errors.Add($"style_id '{id}' is not a style"); return; }
+        if (body["style_params"] is not JsonObject given) return;
+        var settings = style["settings"]!.AsArray().Concat(style["advanced_settings"]?.AsArray() ?? new JsonArray()).ToList();
+        foreach (var (name, value) in given)
+        {
+            var setting = settings.FirstOrDefault(x => (string)x!["name"] == name);
+            if (setting == null) { findings.Errors.Add($"style_params.{name}: '{id}' has no such setting"); continue; }
+            string kind = (string)setting["kind"];
+            if (kind == "bool") { if (value?.GetValueKind() is not (System.Text.Json.JsonValueKind.True or System.Text.Json.JsonValueKind.False)) findings.Errors.Add($"style_params.{name} must be true/false"); continue; }
+            bool listed = setting["options"]!.AsArray().Any(o => o!["value"]!.ToJsonString() == value!.ToJsonString());
+            bool hex = kind == "color" && value?.GetValueKind() == System.Text.Json.JsonValueKind.String && System.Text.RegularExpressions.Regex.IsMatch((string)value!, "^#[0-9a-fA-F]{6}$");
+            if (!listed && !hex) findings.Errors.Add($"style_params.{name} = {value?.ToJsonString()} is not one of its options");
+        }
+    }
+
     async Task Submit(HttpListenerContext ctx, Request rec, string api, JsonObject body)
     {
         var findings = contract.Validate("POST", api, body);
+        CheckStyleParams(body, findings);
         rec.Findings = findings;
         if (!findings.Ok)
         {
@@ -354,7 +426,30 @@ public class FakeLudoApi : IDisposable
                 if ((string)b["model"] is null or "hydra") s["audio_url"] = F($"{job.Id}-sfx.mp3");
                 return s;
             case "/assets/3d-model":
-                return new JsonObject { ["model_url"] = F($"{job.Id}-model.glb"), ["snapshots"] = new JsonArray(F($"{job.Id}-snap0.webp"), F($"{job.Id}-snap1.webp")) };
+                var m3 = new JsonObject { ["model_url"] = F($"{job.Id}-model.glb"), ["snapshots"] = new JsonArray(F($"{job.Id}-snap0.webp"), F($"{job.Id}-snap1.webp")) };
+                if (b["rig"] != null && (bool)b["rig"]) m3["rigged"] = true;
+                return m3;
+            case "/assets/sprite/directional":
+                var sheets = new JsonArray();
+                foreach (var d in b["directions"]?.AsArray() ?? new JsonArray(JsonValue.Create("SW")))
+                {
+                    var sheet = new JsonObject
+                    {
+                        ["direction"] = (string)d, ["spritesheet_url"] = F($"{job.Id}-sheet-{d}.webp"), ["video_url"] = F($"{job.Id}-{d}.mp4"),
+                        ["num_frames"] = 36, ["num_cols"] = 6, ["num_rows"] = 6, ["fps"] = 12,
+                        ["render_3d"] = new JsonObject { ["style_id"] = (string)b["style_id"] ?? "render_3d", ["style_version"] = 1, ["direction"] = (string)d },
+                    };
+                    if (b["gif"] != null && (bool)b["gif"]) sheet["gif_url"] = F($"{job.Id}-{d}.gif");
+                    sheets.Add(sheet);
+                }
+                return new JsonObject { ["sheets"] = sheets };
+            case "/assets/sprite/directional-stills":
+                var stills = new JsonArray();
+                foreach (var d in b["directions"]?.AsArray() ?? new JsonArray(JsonValue.Create("SW")))
+                    stills.Add(new JsonObject { ["direction"] = (string)d, ["url"] = F($"{job.Id}-still-{d}.webp"), ["width"] = 1024, ["height"] = 1024 });
+                return new JsonObject { ["images"] = stills };
+            case "/assets/image/upscale":
+                return new JsonObject { ["url"] = F($"{job.Id}-upscaled.png"), ["request_id"] = (string)b["request_id"], ["created_at"] = now };
             case "/assets/3d-model/rig":
                 return new JsonObject { ["model_url"] = F($"{job.Id}-rigged.glb"), ["rigged"] = true };
             case "/assets/3d-model/animate":

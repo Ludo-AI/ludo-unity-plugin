@@ -1253,6 +1253,295 @@
         "x-mcp-description": "Generate a sound effect for a previously generated spritesheet animation. Pass, as `spritesheet_video_url`, the `video_url` you received from `animateSprite`, `animateSpriteKeyframes`, `transferMotion`, or `editSpritesheet` - it must belong to a spritesheet you generated within the last 7 days; arbitrary external videos are not accepted. Spritesheets generated with the hydra model already come with `audio_url`, so only call this for forge / forge-pixel output or to replace hydra's sound. Optionally add a `prompt` describing the sound you want. The job result is only the URL of the generated audio file, an MP3 or WAV (the URL's extension, .mp3 or .wav, says which); no video is returned. The audio is also attached to the spritesheet, so it appears as `audio_url` in listGenerations (type spritesheet), where the spritesheet keeps the `request_id` it was generated with. Pass an optional `request_id` to make this call idempotent and to find its job again; it must not be one you already used for another generation. Requires an API key (user scope). The call returns 202 with a job id - poll getApiJob (pass wait 30 to long-poll) honouring poll_after_ms, until status is succeeded; its result field is exactly the response documented for this operation. Synchronous responses are deprecated but still supported: pass `async: false` to block until the result is ready and receive it as the response body. Synchronous calls run on the same queue: the response carries an X-Ludo-Job-Id header, and a job still running after 15 minutes comes back as 202 with the job instead of an error. Each account may have up to 50 generations queued or running at once via the API; a request beyond that returns 429 (code PENDING_JOBS_LIMIT).\n\nCredits: This endpoint consumes 3 credits per call."
       }
     },
+    "/assets/sprite/directional-styles": {
+      "get": {
+        "description": "List the styles Directional Sprites can render a 3D model in, with the perspectives (camera heights) and the eight directions they render from. Each style has an id (pass it as style_id), a label, a description, a family, whether it is pixel art, a thumbnail_url of the style at its defaults, its current version, and its settings: each setting has a name (the key in style_params), a kind (choice, bool or color - a color setting also takes any colour), its options ({label, value}) and its default. advanced_settings work the same way. Free discovery endpoint: it does not charge credits. Use it before previewDirectionalSprites, createDirectionalSprites and createDirectionalStills. Requires an API key (user scope).",
+        "tags": [
+          "Spritesheets"
+        ],
+        "operationId": "listDirectionalSpriteStyles",
+        "x-cli-name": "directional-styles",
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectionalSpriteStylesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "Shell",
+            "label": "cURL",
+            "source": "curl -X GET \"https://api.ludo.ai/api/assets/sprite/directional-styles\" \\\n  -H \"Authorization: ApiKey YOUR_API_KEY\""
+          },
+          {
+            "lang": "JavaScript",
+            "label": "JavaScript",
+            "source": "const response = await fetch(\"https://api.ludo.ai/api/assets/sprite/directional-styles\", {\n  headers: {\n    \"Authorization\": \"ApiKey YOUR_API_KEY\"\n  }\n});\n\nconst data = await response.json();\nconsole.log(data);"
+          },
+          {
+            "lang": "Python",
+            "label": "Python",
+            "source": "import requests\n\nresponse = requests.get(\n    \"https://api.ludo.ai/api/assets/sprite/directional-styles\",\n    headers={\"Authorization\": \"ApiKey YOUR_API_KEY\"}\n)\n\nprint(response.json())"
+          }
+        ]
+      }
+    },
+    "/assets/sprite/directional-preview": {
+      "post": {
+        "summary": "Preview Directional Sprites: a few frames of a 3D model in a style, from each direction asked for, to check a style before rendering. Takes the same model, animation, camera and style fields as createDirectionalSprites. The response (synchronous, not a job) has one preview per direction, in the order asked, each with `frame_urls` - the frames as images (4 for an animated model, 1 for a still one) - and `render_3d`, the style and settings as rendered, which createDirectionalSprites takes back as they are. Free (no credits), and nothing is saved to your generations; the frame images are kept for 7 days. A preview takes several seconds. You run one preview at a time: starting another while one is still running cancels the older one, which then answers 204 with no body. Preview one or two directions while trying styles and render only once the look is right. Requires an API key (user scope).",
+        "tags": [
+          "Spritesheets"
+        ],
+        "operationId": "previewDirectionalSprites",
+        "x-cli-name": "directional-preview",
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectionalPreviewPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectionalPreviewResult"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Cancelled by a newer preview of yours"
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Previews temporarily unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "Shell",
+            "label": "cURL",
+            "source": "curl -X POST \"https://api.ludo.ai/api/assets/sprite/directional-preview\" \\\n  -H \"Authorization: ApiKey YOUR_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"<url> OR data:model/gltf-binary;base64,...\"}'"
+          },
+          {
+            "lang": "JavaScript",
+            "label": "JavaScript",
+            "source": "const response = await fetch(\"https://api.ludo.ai/api/assets/sprite/directional-preview\", {\n  method: \"POST\",\n  headers: {\n    \"Authorization\": \"ApiKey YOUR_API_KEY\",\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    \"model\": \"<url> OR data:model/gltf-binary;base64,...\"\n  })\n});\n\nconst data = await response.json();\nconsole.log(data);"
+          },
+          {
+            "lang": "Python",
+            "label": "Python",
+            "source": "import requests\n\nresponse = requests.post(\n    \"https://api.ludo.ai/api/assets/sprite/directional-preview\",\n    headers={\n        \"Authorization\": \"ApiKey YOUR_API_KEY\",\n        \"Content-Type\": \"application/json\"\n    },\n    json={\n      \"model\": \"<url> OR data:model/gltf-binary;base64,...\"\n    }\n)\n\nprint(response.json())"
+          }
+        ]
+      }
+    },
+    "/assets/sprite/directional": {
+      "post": {
+        "summary": "createDirectionalSprites",
+        "tags": [
+          "Spritesheets"
+        ],
+        "operationId": "createDirectionalSprites",
+        "x-cli-name": "directional",
+        "x-credit-action": "RENDER_SPRITE_3D",
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectionalSpritesPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectionalSpritesResult"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted - the generation was queued; poll GET /assets/jobs/{id}. A synchronous (async: false) call still running after 15 minutes also receives this.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicJob"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "Shell",
+            "label": "cURL",
+            "source": "curl -X POST \"https://api.ludo.ai/api/assets/sprite/directional\" \\\n  -H \"Authorization: ApiKey YOUR_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"<url> OR data:model/gltf-binary;base64,...\"}'"
+          },
+          {
+            "lang": "JavaScript",
+            "label": "JavaScript",
+            "source": "const response = await fetch(\"https://api.ludo.ai/api/assets/sprite/directional\", {\n  method: \"POST\",\n  headers: {\n    \"Authorization\": \"ApiKey YOUR_API_KEY\",\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    \"model\": \"<url> OR data:model/gltf-binary;base64,...\"\n  })\n});\n\nconst data = await response.json();\nconsole.log(data);"
+          },
+          {
+            "lang": "Python",
+            "label": "Python",
+            "source": "import requests\n\nresponse = requests.post(\n    \"https://api.ludo.ai/api/assets/sprite/directional\",\n    headers={\n        \"Authorization\": \"ApiKey YOUR_API_KEY\",\n        \"Content-Type\": \"application/json\"\n    },\n    json={\n      \"model\": \"<url> OR data:model/gltf-binary;base64,...\"\n    }\n)\n\nprint(response.json())"
+          }
+        ],
+        "x-credit-description": "This endpoint consumes 1 credit per direction (one sheet each)",
+        "x-credit-summary": "This endpoint consumes 1 credit per direction (one sheet each)",
+        "description": "Directional Sprites: render a 3D model into one spritesheet per direction, in a style. Pass the GLB in `model` (URL or base64; rigged, to animate it - see create3DModel with rig, or rigModel) and at most one animation: `animation_url` (the `glb_url` of an animation from animate3DModel or animate3DModelPreset, made for this model), `preset_id` (a preset from listAnimationPresets, retargeted onto the model; needs a humanoid_template or humanoid_template_hands rig) or `model_animation` (the name of an animation the GLB itself carries). With no animation each sheet is a single frame. `directions` are where the camera stands around a character facing S (up to 8); every direction is rendered together, on the same frame size, scale and floor, so the sheets line up. Pick the style with listDirectionalSpriteStyles (style_id, and style_params for its settings) and check it with previewDirectionalSprites first. The job result is one sheet per direction, in the order asked, each with its `spritesheet_url`, grid fields, fps and `render_3d`. Credits are held for every direction when the job is accepted and charged for the sheets that come back; a failed or cancelled job is refunded. Pass an optional request_id to tag the sheets for later retrieval via listGenerations (type spritesheet). Requires an API key (user scope). The call returns 202 with a job id - poll getApiJob (pass wait 30 to long-poll) honouring poll_after_ms, until status is succeeded; its result field is exactly the response documented for this operation. Synchronous responses are deprecated but still supported: pass `async: false` to block until the result is ready and receive it as the response body. Synchronous calls run on the same queue: the response carries an X-Ludo-Job-Id header, and a job still running after 15 minutes comes back as 202 with the job instead of an error. Each account may have up to 50 generations queued or running at once via the API; a request beyond that returns 429 (code PENDING_JOBS_LIMIT).\n\n> **Credits:** This endpoint consumes 1 credit per direction (one sheet each).",
+        "x-mcp-description": "Directional Sprites: render a 3D model into one spritesheet per direction, in a style. Pass the GLB in `model` (URL or base64; rigged, to animate it - see create3DModel with rig, or rigModel) and at most one animation: `animation_url` (the `glb_url` of an animation from animate3DModel or animate3DModelPreset, made for this model), `preset_id` (a preset from listAnimationPresets, retargeted onto the model; needs a humanoid_template or humanoid_template_hands rig) or `model_animation` (the name of an animation the GLB itself carries). With no animation each sheet is a single frame. `directions` are where the camera stands around a character facing S (up to 8); every direction is rendered together, on the same frame size, scale and floor, so the sheets line up. Pick the style with listDirectionalSpriteStyles (style_id, and style_params for its settings) and check it with previewDirectionalSprites first. The job result is one sheet per direction, in the order asked, each with its `spritesheet_url`, grid fields, fps and `render_3d`. Credits are held for every direction when the job is accepted and charged for the sheets that come back; a failed or cancelled job is refunded. Pass an optional request_id to tag the sheets for later retrieval via listGenerations (type spritesheet). Requires an API key (user scope). The call returns 202 with a job id - poll getApiJob (pass wait 30 to long-poll) honouring poll_after_ms, until status is succeeded; its result field is exactly the response documented for this operation. Synchronous responses are deprecated but still supported: pass `async: false` to block until the result is ready and receive it as the response body. Synchronous calls run on the same queue: the response carries an X-Ludo-Job-Id header, and a job still running after 15 minutes comes back as 202 with the job instead of an error. Each account may have up to 50 generations queued or running at once via the API; a request beyond that returns 429 (code PENDING_JOBS_LIMIT).\n\nCredits: This endpoint consumes 1 credit per direction (one sheet each)."
+      }
+    },
+    "/assets/sprite/directional-stills": {
+      "post": {
+        "summary": "createDirectionalStills",
+        "tags": [
+          "Spritesheets"
+        ],
+        "operationId": "createDirectionalStills",
+        "x-cli-name": "directional-stills",
+        "x-credit-action": "RENDER_SPRITE_3D_STILL",
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DirectionalStillsPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectionalStillsResult"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted - the generation was queued; poll GET /assets/jobs/{id}. A synchronous (async: false) call still running after 15 minutes also receives this.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicJob"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "Shell",
+            "label": "cURL",
+            "source": "curl -X POST \"https://api.ludo.ai/api/assets/sprite/directional-stills\" \\\n  -H \"Authorization: ApiKey YOUR_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"model\":\"<url> OR data:model/gltf-binary;base64,...\"}'"
+          },
+          {
+            "lang": "JavaScript",
+            "label": "JavaScript",
+            "source": "const response = await fetch(\"https://api.ludo.ai/api/assets/sprite/directional-stills\", {\n  method: \"POST\",\n  headers: {\n    \"Authorization\": \"ApiKey YOUR_API_KEY\",\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    \"model\": \"<url> OR data:model/gltf-binary;base64,...\"\n  })\n});\n\nconst data = await response.json();\nconsole.log(data);"
+          },
+          {
+            "lang": "Python",
+            "label": "Python",
+            "source": "import requests\n\nresponse = requests.post(\n    \"https://api.ludo.ai/api/assets/sprite/directional-stills\",\n    headers={\n        \"Authorization\": \"ApiKey YOUR_API_KEY\",\n        \"Content-Type\": \"application/json\"\n    },\n    json={\n      \"model\": \"<url> OR data:model/gltf-binary;base64,...\"\n    }\n)\n\nprint(response.json())"
+          }
+        ],
+        "x-credit-description": "This endpoint consumes 0.5 credits per direction (one image each)",
+        "x-credit-summary": "This endpoint consumes 0.5 credits per direction (one image each)",
+        "description": "Directional Sprites stills: render a 3D model as it is (no animation) into one large image per direction, in a style, on a transparent background. Pass the GLB in `model` (URL or base64), the `directions` (up to 8, rendered together so they line up) and the style (listDirectionalSpriteStyles). Each still is a sprite image you can animate with animateSprite or edit with editImage. The job result is one image per direction, in the order asked. Credits are held for every direction when the job is accepted and charged for the images that come back; a failed or cancelled job is refunded. Pass an optional request_id to tag the images for later retrieval via listGenerations (type image). Requires an API key (user scope). The call returns 202 with a job id - poll getApiJob (pass wait 30 to long-poll) honouring poll_after_ms, until status is succeeded; its result field is exactly the response documented for this operation. Synchronous responses are deprecated but still supported: pass `async: false` to block until the result is ready and receive it as the response body. Synchronous calls run on the same queue: the response carries an X-Ludo-Job-Id header, and a job still running after 15 minutes comes back as 202 with the job instead of an error. Each account may have up to 50 generations queued or running at once via the API; a request beyond that returns 429 (code PENDING_JOBS_LIMIT).\n\n> **Credits:** This endpoint consumes 0.5 credits per direction (one image each).",
+        "x-mcp-description": "Directional Sprites stills: render a 3D model as it is (no animation) into one large image per direction, in a style, on a transparent background. Pass the GLB in `model` (URL or base64), the `directions` (up to 8, rendered together so they line up) and the style (listDirectionalSpriteStyles). Each still is a sprite image you can animate with animateSprite or edit with editImage. The job result is one image per direction, in the order asked. Credits are held for every direction when the job is accepted and charged for the images that come back; a failed or cancelled job is refunded. Pass an optional request_id to tag the images for later retrieval via listGenerations (type image). Requires an API key (user scope). The call returns 202 with a job id - poll getApiJob (pass wait 30 to long-poll) honouring poll_after_ms, until status is succeeded; its result field is exactly the response documented for this operation. Synchronous responses are deprecated but still supported: pass `async: false` to block until the result is ready and receive it as the response body. Synchronous calls run on the same queue: the response carries an X-Ludo-Job-Id header, and a job still running after 15 minutes comes back as 202 with the job instead of an error. Each account may have up to 50 generations queued or running at once via the API; a request beyond that returns 429 (code PENDING_JOBS_LIMIT).\n\nCredits: This endpoint consumes 0.5 credits per direction (one image each)."
+      }
+    },
     "/assets/video": {
       "post": {
         "summary": "createVideo",
@@ -1643,6 +1932,84 @@
         "x-mcp-description": "Remove the background from a single image, returning the subject isolated on a transparent background. Supply the source image (URL or base64); optionally set crop to trim the result to the content, and creative_edit (default true) for higher-quality output that may not match the input pixel-for-pixel - set it false when the subject must stay pixel-identical, e.g. an existing sprite you will animate. The job result is a single image result with a url (not an array). The image is uploaded and validated, and an image larger than 15MB is rejected with HTTP 400. Credits are held when the job is accepted and refunded if it fails or is cancelled. Use removeBackground for this dedicated cutout task; editImage can also remove backgrounds via a prompt but is better for broader edits, while createImage and generateWithStyle produce new images rather than process an existing one. Pass an optional request_id to tag the result so you can retrieve it later via listGenerations (type image). Requires an API key (user scope). The call returns 202 with a job id - poll `GET /assets/jobs/{id}`, honouring poll_after_ms or long-polling with wait=30, until status is succeeded; its result field is exactly the response documented for this operation. Synchronous responses are deprecated but still supported: pass `async: false` to block until the result is ready and receive it as the response body. Synchronous calls run on the same queue: the response carries an X-Ludo-Job-Id header, and a job still running after 15 minutes comes back as 202 with the job instead of an error. Each account may have up to 50 generations queued or running at once via the API; a request beyond that returns 429 (code PENDING_JOBS_LIMIT).\n\nCredits: This endpoint consumes 0.5 credits per result."
       }
     },
+    "/assets/image/upscale": {
+      "post": {
+        "summary": "upscaleImage",
+        "tags": [
+          "Images"
+        ],
+        "operationId": "upscaleImage",
+        "x-credit-action": "GENERATE_IMAGE",
+        "security": [
+          {
+            "ApiKey": []
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpscaleImagePayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageResult"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "Accepted - the generation was queued; poll GET /assets/jobs/{id}. A synchronous (async: false) call still running after 15 minutes also receives this.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicJob"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "Shell",
+            "label": "cURL",
+            "source": "curl -X POST \"https://api.ludo.ai/api/assets/image/upscale\" \\\n  -H \"Authorization: ApiKey YOUR_API_KEY\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"image\":\"<url> OR data:image/png;base64,...\"}'"
+          },
+          {
+            "lang": "JavaScript",
+            "label": "JavaScript",
+            "source": "const response = await fetch(\"https://api.ludo.ai/api/assets/image/upscale\", {\n  method: \"POST\",\n  headers: {\n    \"Authorization\": \"ApiKey YOUR_API_KEY\",\n    \"Content-Type\": \"application/json\"\n  },\n  body: JSON.stringify({\n    \"image\": \"<url> OR data:image/png;base64,...\"\n  })\n});\n\nconst data = await response.json();\nconsole.log(data);"
+          },
+          {
+            "lang": "Python",
+            "label": "Python",
+            "source": "import requests\n\nresponse = requests.post(\n    \"https://api.ludo.ai/api/assets/image/upscale\",\n    headers={\n        \"Authorization\": \"ApiKey YOUR_API_KEY\",\n        \"Content-Type\": \"application/json\"\n    },\n    json={\n      \"image\": \"<url> OR data:image/png;base64,...\"\n    }\n)\n\nprint(response.json())"
+          }
+        ],
+        "x-credit-description": "This endpoint consumes 0.5 credits per result",
+        "x-credit-summary": "This endpoint consumes 0.5 credits per result",
+        "description": "Upscale an image: the same picture at a higher resolution, up to 4x, with the result capped at 2048px on its longest side. The source image (URL or base64) must be below 2048px on its longest side; a larger one is rejected with HTTP 400. The job result is a single image result with a url (not an array). The image is uploaded and validated, and an image larger than 15MB is rejected with HTTP 400. Credits are held when the job is accepted and refunded if it fails or is cancelled. Use upscaleImage to raise the resolution of an image you already have; createImage and editImage make new or changed images instead. Pass an optional request_id to tag the result so you can retrieve it later via listGenerations (type image). Requires an API key (user scope). The call returns 202 with a job id - poll `GET /assets/jobs/{id}`, honouring poll_after_ms or long-polling with wait=30, until status is succeeded; its result field is exactly the response documented for this operation. Synchronous responses are deprecated but still supported: pass `async: false` to block until the result is ready and receive it as the response body. Synchronous calls run on the same queue: the response carries an X-Ludo-Job-Id header, and a job still running after 15 minutes comes back as 202 with the job instead of an error. Each account may have up to 50 generations queued or running at once via the API; a request beyond that returns 429 (code PENDING_JOBS_LIMIT).\n\n> **Credits:** This endpoint consumes 0.5 credits per result.",
+        "x-mcp-description": "Upscale an image: the same picture at a higher resolution, up to 4x, with the result capped at 2048px on its longest side. The source image (URL or base64) must be below 2048px on its longest side; a larger one is rejected with HTTP 400. The job result is a single image result with a url (not an array). The image is uploaded and validated, and an image larger than 15MB is rejected with HTTP 400. Credits are held when the job is accepted and refunded if it fails or is cancelled. Use upscaleImage to raise the resolution of an image you already have; createImage and editImage make new or changed images instead. Pass an optional request_id to tag the result so you can retrieve it later via listGenerations (type image). Requires an API key (user scope). The call returns 202 with a job id - poll `GET /assets/jobs/{id}`, honouring poll_after_ms or long-polling with wait=30, until status is succeeded; its result field is exactly the response documented for this operation. Synchronous responses are deprecated but still supported: pass `async: false` to block until the result is ready and receive it as the response body. Synchronous calls run on the same queue: the response carries an X-Ludo-Job-Id header, and a job still running after 15 minutes comes back as 202 with the job instead of an error. Each account may have up to 50 generations queued or running at once via the API; a request beyond that returns 429 (code PENDING_JOBS_LIMIT).\n\nCredits: This endpoint consumes 0.5 credits per result."
+      }
+    },
     "/assets/3d-model": {
       "post": {
         "summary": "create3DModel",
@@ -1715,10 +2082,10 @@
             "source": "import requests\n\nresponse = requests.post(\n    \"https://api.ludo.ai/api/assets/3d-model\",\n    headers={\n        \"Authorization\": \"ApiKey YOUR_API_KEY\",\n        \"Content-Type\": \"application/json\"\n    },\n    json={\n      \"image\": \"<url> OR data:image/png;base64,...\"\n    }\n)\n\nprint(response.json())"
           }
         ],
-        "x-credit-description": "This endpoint consumes 4 credits per call with model \"prop\" (default), 15 credits per call with model \"hero\"",
-        "x-credit-summary": "This endpoint consumes 4 credits per call with model \"prop\" (default), 15 credits per call with model \"hero\"",
-        "description": "Convert a source image into a textured 3D model (image-to-3D). The job result is a downloadable GLB model_url plus an array of snapshot image URLs rendered from different angles (handy for previews). model picks the generator: prop (default) is low-cost and suits everyday props and environment pieces; hero is far more detailed and accurate, for close-up assets, but slower and more expensive. image is the front view; with prop, pass an optional back_image (the same subject seen from behind) so the back of the model follows it instead of being invented - hero takes the front image only and rejects a back_image with HTTP 400. Accepts optional mesh controls: target_num_faces (max triangle count, 1000-200000, default 50000), texture_size (1024 or 2048, default 2048), and texture_type (\"pbr\", \"simple\", or \"none\", default \"pbr\"). Credits are held when the job is accepted and refunded if it fails or is cancelled. Pass an optional request_id to tag the result so you can locate it later via listGenerations (type 3d). Requires an API key (user scope). The call returns 202 with a job id - poll getApiJob (pass wait 30 to long-poll) honouring poll_after_ms, until status is succeeded; its result field is exactly the response documented for this operation. Synchronous responses are deprecated but still supported: pass `async: false` to block until the result is ready and receive it as the response body. Synchronous calls run on the same queue: the response carries an X-Ludo-Job-Id header, and a job still running after 15 minutes comes back as 202 with the job instead of an error. Each account may have up to 50 generations queued or running at once via the API; a request beyond that returns 429 (code PENDING_JOBS_LIMIT).\n\n> **Credits:** This endpoint consumes 4 credits per call with model \"prop\" (default), 15 credits per call with model \"hero\".",
-        "x-mcp-description": "Convert a source image into a textured 3D model (image-to-3D). The job result is a downloadable GLB model_url plus an array of snapshot image URLs rendered from different angles (handy for previews). model picks the generator: prop (default) is low-cost and suits everyday props and environment pieces; hero is far more detailed and accurate, for close-up assets, but slower and more expensive. image is the front view; with prop, pass an optional back_image (the same subject seen from behind) so the back of the model follows it instead of being invented - hero takes the front image only and rejects a back_image with HTTP 400. Accepts optional mesh controls: target_num_faces (max triangle count, 1000-200000, default 50000), texture_size (1024 or 2048, default 2048), and texture_type (\"pbr\", \"simple\", or \"none\", default \"pbr\"). Credits are held when the job is accepted and refunded if it fails or is cancelled. Pass an optional request_id to tag the result so you can locate it later via listGenerations (type 3d). Requires an API key (user scope). The call returns 202 with a job id - poll getApiJob (pass wait 30 to long-poll) honouring poll_after_ms, until status is succeeded; its result field is exactly the response documented for this operation. Synchronous responses are deprecated but still supported: pass `async: false` to block until the result is ready and receive it as the response body. Synchronous calls run on the same queue: the response carries an X-Ludo-Job-Id header, and a job still running after 15 minutes comes back as 202 with the job instead of an error. Each account may have up to 50 generations queued or running at once via the API; a request beyond that returns 429 (code PENDING_JOBS_LIMIT).\n\nCredits: This endpoint consumes 4 credits per call with model \"prop\" (default), 15 credits per call with model \"hero\"."
+        "x-credit-description": "This endpoint consumes 4 credits per call with model \"prop\" (default), 15 credits per call with model \"hero\"; rig true adds 1 credit when the model comes back rigged",
+        "x-credit-summary": "This endpoint consumes 4 credits per call with model \"prop\" (default), 15 credits per call with model \"hero\"; rig true adds 1 credit when the model comes back rigged",
+        "description": "Convert a source image into a textured 3D model (image-to-3D). The job result is a downloadable GLB model_url plus an array of snapshot image URLs rendered from different angles (handy for previews). model picks the generator: prop (default) is low-cost and suits everyday props and environment pieces; hero is far more detailed and accurate, for close-up assets, but slower and more expensive. image is the front view; with prop, pass an optional back_image (the same subject seen from behind) so the back of the model follows it instead of being invented - hero takes the front image only and rejects a back_image with HTTP 400. Accepts optional mesh controls: target_num_faces (max triangle count, 1000-200000, default 50000), texture_size (1024 or 2048, default 2048), and texture_type (\"pbr\", \"simple\", or \"none\", default \"pbr\"). Pass rig true to also rig the model in the same call (rig_type and joint_naming as in rigModel), ready for animate3DModelPreset or createDirectionalSprites; that adds the rigModel price, charged only when the result comes back rigged. Credits are held when the job is accepted and refunded if it fails or is cancelled. Pass an optional request_id to tag the result so you can locate it later via listGenerations (type 3d). Requires an API key (user scope). The call returns 202 with a job id - poll getApiJob (pass wait 30 to long-poll) honouring poll_after_ms, until status is succeeded; its result field is exactly the response documented for this operation. Synchronous responses are deprecated but still supported: pass `async: false` to block until the result is ready and receive it as the response body. Synchronous calls run on the same queue: the response carries an X-Ludo-Job-Id header, and a job still running after 15 minutes comes back as 202 with the job instead of an error. Each account may have up to 50 generations queued or running at once via the API; a request beyond that returns 429 (code PENDING_JOBS_LIMIT).\n\n> **Credits:** This endpoint consumes 4 credits per call with model \"prop\" (default), 15 credits per call with model \"hero\"; rig true adds 1 credit when the model comes back rigged.",
+        "x-mcp-description": "Convert a source image into a textured 3D model (image-to-3D). The job result is a downloadable GLB model_url plus an array of snapshot image URLs rendered from different angles (handy for previews). model picks the generator: prop (default) is low-cost and suits everyday props and environment pieces; hero is far more detailed and accurate, for close-up assets, but slower and more expensive. image is the front view; with prop, pass an optional back_image (the same subject seen from behind) so the back of the model follows it instead of being invented - hero takes the front image only and rejects a back_image with HTTP 400. Accepts optional mesh controls: target_num_faces (max triangle count, 1000-200000, default 50000), texture_size (1024 or 2048, default 2048), and texture_type (\"pbr\", \"simple\", or \"none\", default \"pbr\"). Pass rig true to also rig the model in the same call (rig_type and joint_naming as in rigModel), ready for animate3DModelPreset or createDirectionalSprites; that adds the rigModel price, charged only when the result comes back rigged. Credits are held when the job is accepted and refunded if it fails or is cancelled. Pass an optional request_id to tag the result so you can locate it later via listGenerations (type 3d). Requires an API key (user scope). The call returns 202 with a job id - poll getApiJob (pass wait 30 to long-poll) honouring poll_after_ms, until status is succeeded; its result field is exactly the response documented for this operation. Synchronous responses are deprecated but still supported: pass `async: false` to block until the result is ready and receive it as the response body. Synchronous calls run on the same queue: the response carries an X-Ludo-Job-Id header, and a job still running after 15 minutes comes back as 202 with the job instead of an error. Each account may have up to 50 generations queued or running at once via the API; a request beyond that returns 429 (code PENDING_JOBS_LIMIT).\n\nCredits: This endpoint consumes 4 credits per call with model \"prop\" (default), 15 credits per call with model \"hero\"; rig true adds 1 credit when the model comes back rigged."
       }
     },
     "/assets/3d-model/rig": {
@@ -5148,6 +5515,384 @@
           }
         }
       },
+      "DirectionalSpriteStylesResponse": {
+        "type": "object",
+        "properties": {
+          "styles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DirectionalSpriteStyle"
+            }
+          },
+          "perspectives": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "directions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "DirectionalPreviewPayload": {
+        "type": "object",
+        "required": [
+          "model"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "The 3D model, as a URL or base64-encoded GLB file (not an AI model name). Rigged, to animate it.",
+            "example": "<url> OR data:model/gltf-binary;base64,..."
+          },
+          "animation_url": {
+            "type": "string",
+            "description": "An animation for the model, as a URL or base64-encoded GLB file - the glb_url of an animation from animate3DModel or animate3DModelPreset, made for this model's skeleton. At most one of animation_url, preset_id and model_animation.",
+            "example": "<url> OR data:model/gltf-binary;base64,..."
+          },
+          "preset_id": {
+            "type": "string",
+            "description": "An animation preset id from listAnimationPresets, retargeted onto the model. The model needs a humanoid_template or humanoid_template_hands rig. At most one of animation_url, preset_id and model_animation."
+          },
+          "crop_loop": {
+            "type": "boolean",
+            "description": "With preset_id, trim the preset to the span that loops seamlessly. Omit to follow the preset's own loop flag."
+          },
+          "model_animation": {
+            "type": "string",
+            "description": "The name of an animation the GLB itself carries. At most one of animation_url, preset_id and model_animation; with none, the preview is a single frame."
+          },
+          "perspective": {
+            "type": "string",
+            "default": "isometric",
+            "description": "Camera height, from the side (horizon) to straight down (top).",
+            "enum": [
+              "horizon",
+              "low",
+              "isometric",
+              "high",
+              "top"
+            ],
+            "example": "isometric"
+          },
+          "directions": {
+            "type": "array",
+            "default": [
+              "SW"
+            ],
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": true,
+            "description": "Where the camera stands around a character facing S, each direction at most once. One preview per direction, in this order.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "S",
+                "SW",
+                "W",
+                "NW",
+                "N",
+                "NE",
+                "E",
+                "SE"
+              ],
+              "example": "S"
+            },
+            "example": [
+              "SW"
+            ]
+          },
+          "style_id": {
+            "type": "string",
+            "default": "render_3d",
+            "description": "A style id from listDirectionalSpriteStyles.",
+            "example": "render_3d"
+          },
+          "style_version": {
+            "type": "integer",
+            "description": "Version of the style; omit for its current one."
+          },
+          "style_params": {
+            "type": "object",
+            "description": "The style's settings to change, by name, each one of its listed option values (true/false for a bool setting, or any colour for a color one). Omit a setting to keep its default."
+          },
+          "keep_horizontal_travel": {
+            "type": "boolean",
+            "default": false,
+            "description": "Keep the animation's ground travel (the character moves across the frame). Off keeps it in place.",
+            "example": false
+          },
+          "keep_vertical_travel": {
+            "type": "boolean",
+            "default": true,
+            "description": "Keep the animation's vertical root motion (jumps, bobbing).",
+            "example": true
+          },
+          "target_frame_size": {
+            "type": "integer",
+            "minimum": 32,
+            "maximum": 384,
+            "default": 256,
+            "description": "Sprite size of the preview frames in pixels (the longer side).",
+            "example": 256
+          }
+        }
+      },
+      "DirectionalPreviewResult": {
+        "type": "object",
+        "properties": {
+          "previews": {
+            "type": "array",
+            "description": "One preview per direction, in the order asked.",
+            "items": {
+              "$ref": "#/components/schemas/DirectionalPreview"
+            }
+          }
+        }
+      },
+      "DirectionalSpritesPayload": {
+        "type": "object",
+        "required": [
+          "model"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "The 3D model, as a URL or base64-encoded GLB file (not an AI model name). Rigged, to animate it.",
+            "example": "<url> OR data:model/gltf-binary;base64,..."
+          },
+          "animation_url": {
+            "type": "string",
+            "description": "An animation for the model, as a URL or base64-encoded GLB file - the glb_url of an animation from animate3DModel or animate3DModelPreset, made for this model's skeleton. At most one of animation_url, preset_id and model_animation.",
+            "example": "<url> OR data:model/gltf-binary;base64,..."
+          },
+          "preset_id": {
+            "type": "string",
+            "description": "An animation preset id from listAnimationPresets, retargeted onto the model. The model needs a humanoid_template or humanoid_template_hands rig. At most one of animation_url, preset_id and model_animation."
+          },
+          "crop_loop": {
+            "type": "boolean",
+            "description": "With preset_id, trim the preset to the span that loops seamlessly. Omit to follow the preset's own loop flag."
+          },
+          "model_animation": {
+            "type": "string",
+            "description": "The name of an animation the GLB itself carries. At most one of animation_url, preset_id and model_animation; with none, each sheet is a single frame."
+          },
+          "perspective": {
+            "type": "string",
+            "default": "isometric",
+            "description": "Camera height, from the side (horizon) to straight down (top).",
+            "enum": [
+              "horizon",
+              "low",
+              "isometric",
+              "high",
+              "top"
+            ],
+            "example": "isometric"
+          },
+          "directions": {
+            "type": "array",
+            "default": [
+              "SW"
+            ],
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": true,
+            "description": "Where the camera stands around a character facing S, each direction at most once. One sheet per direction, in this order, rendered together on the same frame size, scale and floor so they line up.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "S",
+                "SW",
+                "W",
+                "NW",
+                "N",
+                "NE",
+                "E",
+                "SE"
+              ],
+              "example": "S"
+            },
+            "example": [
+              "SW"
+            ]
+          },
+          "style_id": {
+            "type": "string",
+            "default": "render_3d",
+            "description": "A style id from listDirectionalSpriteStyles.",
+            "example": "render_3d"
+          },
+          "style_version": {
+            "type": "integer",
+            "description": "Version of the style; omit for its current one. A render_3d from an earlier result names the version it was rendered with."
+          },
+          "style_params": {
+            "type": "object",
+            "description": "The style's settings to change, by name, each one of its listed option values (true/false for a bool setting, or any colour for a color one). Omit a setting to keep its default."
+          },
+          "keep_horizontal_travel": {
+            "type": "boolean",
+            "default": false,
+            "description": "Keep the animation's ground travel (the character moves across the frame). Off keeps it in place.",
+            "example": false
+          },
+          "keep_vertical_travel": {
+            "type": "boolean",
+            "default": true,
+            "description": "Keep the animation's vertical root motion (jumps, bobbing).",
+            "example": true
+          },
+          "target_frame_size": {
+            "type": "integer",
+            "minimum": 32,
+            "maximum": 640,
+            "default": 640,
+            "description": "Sprite size in pixels - the longer side of the frame, which every direction shares.",
+            "example": 640
+          },
+          "num_frames": {
+            "type": "integer",
+            "minimum": 4,
+            "maximum": 100,
+            "default": 36,
+            "description": "Frames per sheet, sampled over the animation; moved to the nearest count that fills the sheet grid, and never more than the animation's keyframes. A still model gives one.",
+            "example": 36
+          },
+          "loop": {
+            "type": "boolean",
+            "description": "Sample the animation as a seamless loop. Omit to follow the animation's own loop flag."
+          },
+          "gif": {
+            "type": "boolean",
+            "default": false,
+            "description": "Also return each sheet as an animated GIF (gif_url).",
+            "example": false
+          },
+          "individual_frames": {
+            "type": "boolean",
+            "default": false,
+            "description": "Also return each sheet's frames as separate images (individual_frame_urls).",
+            "example": false
+          },
+          "request_id": {
+            "type": "string",
+            "description": "Optional client-provided identifier, unique per request. Re-sending the same request_id returns the existing job instead of generating again. Also usable as the request_id filter of listGenerations."
+          },
+          "async": {
+            "type": "boolean",
+            "default": true,
+            "description": "Defaults to true: the call returns 202 immediately with a job id to poll with getApiJob. Set false for a synchronous response (deprecated but supported): the call then blocks until the result is ready.",
+            "example": true
+          }
+        }
+      },
+      "DirectionalSpritesResult": {
+        "type": "object",
+        "properties": {
+          "sheets": {
+            "type": "array",
+            "description": "One sheet per direction, in the order asked.",
+            "items": {
+              "$ref": "#/components/schemas/DirectionalSpriteSheet"
+            }
+          }
+        }
+      },
+      "DirectionalStillsPayload": {
+        "type": "object",
+        "required": [
+          "model"
+        ],
+        "properties": {
+          "model": {
+            "type": "string",
+            "description": "The 3D model, as a URL or base64-encoded GLB file (not an AI model name). Rendered as it is, in its rest pose.",
+            "example": "<url> OR data:model/gltf-binary;base64,..."
+          },
+          "perspective": {
+            "type": "string",
+            "default": "isometric",
+            "description": "Camera height, from the side (horizon) to straight down (top).",
+            "enum": [
+              "horizon",
+              "low",
+              "isometric",
+              "high",
+              "top"
+            ],
+            "example": "isometric"
+          },
+          "directions": {
+            "type": "array",
+            "default": [
+              "SW"
+            ],
+            "minItems": 1,
+            "maxItems": 8,
+            "uniqueItems": true,
+            "description": "Where the camera stands around a character facing S, each direction at most once. One image per direction, in this order, rendered together so they line up.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "S",
+                "SW",
+                "W",
+                "NW",
+                "N",
+                "NE",
+                "E",
+                "SE"
+              ],
+              "example": "S"
+            },
+            "example": [
+              "SW"
+            ]
+          },
+          "style_id": {
+            "type": "string",
+            "default": "render_3d",
+            "description": "A style id from listDirectionalSpriteStyles.",
+            "example": "render_3d"
+          },
+          "style_version": {
+            "type": "integer",
+            "description": "Version of the style; omit for its current one."
+          },
+          "style_params": {
+            "type": "object",
+            "description": "The style's settings to change, by name, each one of its listed option values (true/false for a bool setting, or any colour for a color one). Omit a setting to keep its default."
+          },
+          "request_id": {
+            "type": "string",
+            "description": "Optional client-provided identifier, unique per request. Re-sending the same request_id returns the existing job instead of generating again. Also usable as the request_id filter of listGenerations."
+          },
+          "async": {
+            "type": "boolean",
+            "default": true,
+            "description": "Defaults to true: the call returns 202 immediately with a job id to poll with getApiJob. Set false for a synchronous response (deprecated but supported): the call then blocks until the result is ready.",
+            "example": true
+          }
+        }
+      },
+      "DirectionalStillsResult": {
+        "type": "object",
+        "properties": {
+          "images": {
+            "type": "array",
+            "description": "One image per direction, in the order asked.",
+            "items": {
+              "$ref": "#/components/schemas/DirectionalStill"
+            }
+          }
+        }
+      },
       "GenerateVideoPayloadPublic": {
         "type": "object",
         "description": "Payload for generating a video from a source image and motion prompt",
@@ -5410,6 +6155,30 @@
           }
         }
       },
+      "UpscaleImagePayload": {
+        "type": "object",
+        "description": "Payload for upscaling an image",
+        "required": [
+          "image"
+        ],
+        "properties": {
+          "image": {
+            "type": "string",
+            "description": "URL or base64-encoded image to upscale, below 2048px on its longest side.",
+            "example": "<url> OR data:image/png;base64,..."
+          },
+          "request_id": {
+            "type": "string",
+            "description": "Optional client-provided identifier, unique per request. Re-sending the same request_id returns the existing job instead of generating again. Also usable as the request_id filter of listGenerations."
+          },
+          "async": {
+            "type": "boolean",
+            "default": true,
+            "description": "Defaults to true: the call returns 202 immediately with a job id to poll with getApiJob. Set false for a synchronous response (deprecated but supported): the call then blocks until the result is ready.",
+            "example": true
+          }
+        }
+      },
       "Create3DModelPayload": {
         "type": "object",
         "required": [
@@ -5465,6 +6234,40 @@
             ],
             "example": "pbr"
           },
+          "rig": {
+            "type": "boolean",
+            "default": false,
+            "description": "Also rig the model (skeleton and skin weights) in the same call, as rigModel would, so it can be animated or rendered with createDirectionalSprites. Adds the rigModel price, charged only when the model comes back rigged (the result's rigged).",
+            "example": false
+          },
+          "rig_type": {
+            "type": "string",
+            "enum": [
+              "general",
+              "humanoid",
+              "game",
+              "humanoid_template",
+              "humanoid_template_hands"
+            ],
+            "default": "humanoid_template",
+            "description": "With rig, which skeleton to build (as rigModel's rig_type). humanoid_template (default, 22 joints) and humanoid_template_hands (52, five fingers per hand) are the ones animation presets and createDirectionalSprites' preset_id need, and only suit two-armed, two-legged characters; use general for creatures and objects.",
+            "example": "humanoid_template"
+          },
+          "joint_naming": {
+            "type": "string",
+            "enum": [
+              "smpl",
+              "mixamo",
+              "humanik",
+              "unreal",
+              "godot",
+              "rigify",
+              "vroid"
+            ],
+            "default": "smpl",
+            "description": "With rig, the bone naming convention (as rigModel's joint_naming). Purely a relabel - the skeleton is identical.",
+            "example": "smpl"
+          },
           "request_id": {
             "type": "string",
             "description": "Optional client-provided identifier, unique per request. Re-sending the same request_id returns the existing job instead of generating again. Also usable as the request_id filter of listGenerations."
@@ -5491,6 +6294,10 @@
               "type": "string"
             },
             "description": "URLs to snapshot images from different angles (useful for previews and MCP agents)"
+          },
+          "rigged": {
+            "type": "boolean",
+            "description": "True when the model carries a skeleton (asked for with rig)."
           }
         }
       },
@@ -6526,6 +7333,154 @@
           }
         }
       },
+      "DirectionalSpriteStyle": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Pass as style_id."
+          },
+          "label": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "family": {
+            "type": "string"
+          },
+          "pixel": {
+            "type": "boolean",
+            "description": "Whether the style is pixel art."
+          },
+          "thumbnail_url": {
+            "type": "string",
+            "description": "The style at its defaults.",
+            "example": "<url>"
+          },
+          "version": {
+            "type": "integer",
+            "description": "The style's current version."
+          },
+          "settings": {
+            "type": "array",
+            "description": "The style's settings: each has a name (its key in style_params), label, description, kind (choice, bool or color), options ({label, value}) and default.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "advanced_settings": {
+            "type": "array",
+            "description": "Finer settings, described the same way.",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "DirectionalPreview": {
+        "type": "object",
+        "properties": {
+          "direction": {
+            "type": "string",
+            "description": "The direction this preview is seen from."
+          },
+          "frame_urls": {
+            "type": "array",
+            "description": "The preview's frames as images, in order (one for a still model). Kept for 7 days.",
+            "items": {
+              "type": "string",
+              "example": "<url>"
+            }
+          },
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          },
+          "num_frames": {
+            "type": "integer"
+          },
+          "fps": {
+            "type": "number",
+            "format": "float"
+          },
+          "render_3d": {
+            "$ref": "#/components/schemas/DirectionalSpriteRender"
+          }
+        }
+      },
+      "DirectionalSpriteSheet": {
+        "type": "object",
+        "properties": {
+          "direction": {
+            "type": "string",
+            "description": "The direction this sheet is seen from."
+          },
+          "spritesheet_url": {
+            "type": "string",
+            "example": "<url>"
+          },
+          "video_url": {
+            "type": "string",
+            "example": "<url>"
+          },
+          "gif_url": {
+            "type": "string",
+            "example": "<url>"
+          },
+          "individual_frame_urls": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "example": "<url>"
+            }
+          },
+          "num_frames": {
+            "type": "integer",
+            "description": "Number of frames in the spritesheet."
+          },
+          "num_cols": {
+            "type": "integer",
+            "description": "Columns in the frame grid. Frames run left-to-right, top-to-bottom."
+          },
+          "num_rows": {
+            "type": "integer",
+            "description": "Rows in the frame grid. The last row may be only partly filled."
+          },
+          "fps": {
+            "type": "number",
+            "format": "float",
+            "description": "The frame rate the sheet plays at."
+          },
+          "render_3d": {
+            "$ref": "#/components/schemas/DirectionalSpriteRender"
+          }
+        }
+      },
+      "DirectionalStill": {
+        "type": "object",
+        "properties": {
+          "direction": {
+            "type": "string",
+            "description": "The direction this image is seen from."
+          },
+          "url": {
+            "type": "string",
+            "example": "<url>"
+          },
+          "width": {
+            "type": "integer"
+          },
+          "height": {
+            "type": "integer"
+          },
+          "render_3d": {
+            "$ref": "#/components/schemas/DirectionalSpriteRender"
+          }
+        }
+      },
       "AnimationClip": {
         "type": "object",
         "properties": {
@@ -6731,6 +7686,40 @@
           },
           "content": {
             "type": "string"
+          }
+        }
+      },
+      "DirectionalSpriteRender": {
+        "type": "object",
+        "properties": {
+          "style_id": {
+            "type": "string"
+          },
+          "style_version": {
+            "type": "integer"
+          },
+          "style_params": {
+            "type": "object",
+            "description": "The style's settings as rendered, by name."
+          },
+          "perspective": {
+            "type": "string"
+          },
+          "direction": {
+            "type": "string"
+          },
+          "animation_name": {
+            "type": "string"
+          },
+          "fps": {
+            "type": "number",
+            "format": "float"
+          },
+          "keep_horizontal_travel": {
+            "type": "boolean"
+          },
+          "keep_vertical_travel": {
+            "type": "boolean"
           }
         }
       }

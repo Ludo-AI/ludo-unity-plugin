@@ -7,6 +7,13 @@
 
 ---
 
+## What's New in 1.0.5
+
+- **Directional Sprites (BETA)**: a new **3D Models** subtab that renders a 3D model into one spritesheet per direction (up to 8), in a 2D style - pixel art, anime cel, hand-painted, watercolour, comic ink, 3D render and more, each with its own settings. Animate it with a clip from **Animate 3D**, an animation preset, or an animation inside the GLB; check it with a free **Preview** first. Spritesheets cost 1 credit per direction; **stills** (the model as it is, one large image per direction, ready for **Animate Sprite**) cost 0.5.
+- **Create 3D**: choose the **Prop** (4 credits) or **Hero** (15 credits, far more detailed, front image only) model, and **Also Rig the Model** in the same call (+1 credit, charged only if it comes back rigged).
+- **Upscale Image**: a new **Sprites & Images** subtab, and an **Upscale** button on every generated image. Up to 4x, capped at 2048px; the upscaled image is a new image. 0.5 credits.
+- **Audio**: voices can be designed from a **character image**; first-name preset voices and voice cloning take a **delivery** note ("whispering, out of breath"); the full preset list (35 voices); text limits match the API (voice 100, speech 250 characters) instead of being cut off.
+
 ## What's New in 1.0.4
 
 - **The plugin now tells Ludo which version it is** (an `x-ludo-tool-version` header on every API request), so we can tell when older builds are still in use. No change to what you see or generate.
@@ -100,7 +107,7 @@ The **Ludo AI Plugin** is a Unity Editor extension that integrates AI-powered as
 
 ### Step 1: Install the Plugin
 
-1. Download **`LudoAI_Plugin_1.0.4.unitypackage`** from the [latest release](https://github.com/Ludo-AI/ludo-unity-plugin/releases/latest)
+1. Download **`LudoAI_Plugin_1.0.5.unitypackage`** from the [latest release](https://github.com/Ludo-AI/ludo-unity-plugin/releases/latest)
 2. In Unity: **Assets** → **Import Package** → **Custom Package...**, pick the file, and click **Import** (or double-click the file with your project open)
 3. Everything lands in `Assets/LudoAIPlugin/`, dependencies included (Editor Coroutines, Newtonsoft.Json, WebP decoder)
 
@@ -163,7 +170,7 @@ Let's generate a simple sprite:
 3. Set texture size to **1024** or **2048**
 4. Click **Create 3D Model** (can take several minutes)
 5. Preview snapshots, then **Download 3D Model** or **Use for Rigging**
-6. Optional (BETA): **Rig Model** → **Animate 3D** for skeletal animation clips
+6. Optional (BETA): **Rig Model** → **Animate 3D** for skeletal animation clips → **Directional Sprites** for 2D spritesheets in eight directions
 
 ---
 
@@ -240,13 +247,21 @@ After saving:
 4. Click **Sprite Editor** and use **Slice** → **Grid By Cell Count**
 5. Apply changes and use in Animator
 
+### Upscale Image
+
+The same picture at a higher resolution: up to 4x, capped at 2048px on the longest side (0.5 credits).
+
+1. Click **Upscale** on a generated image, or open the **Upscale Image** subtab and paste a URL or **Select from Project** (the file is sent as it is, not resized)
+2. The source must be under 2048px on its longest side; larger images can't be upscaled
+3. Click **Upscale Image**, then **Save Upscaled Image** (PNG). The upscaled image is a new image; the original is kept
+
 ---
 
 ## 3D Models
 
 Convert 2D concept art or sprites into 3D models, then rig and animate them for use in Unity.
 
-The **3D Models** tab has three subtabs: **Create 3D**, **Rig Model**, and **Animate 3D**. Flow works best as Create → Rig → Animate.
+The **3D Models** tab has four subtabs: **Create 3D**, **Rig Model**, **Animate 3D** and **Directional Sprites**. Flow works best as Create → Rig → Animate → Directional Sprites (or Create with **Also Rig the Model**, skipping the Rig step).
 
 ### Create 3D from Image
 
@@ -255,7 +270,11 @@ The **3D Models** tab has three subtabs: **Create 3D**, **Rig Model**, and **Ani
    - Click "Select from Project" to use existing image
    - Or paste base64 encoded image
 
-   **Back View (optional)**: an image of the *same* subject seen from behind (rotated 180°), at the same scale, pose and style. Paste a URL or click "Select Back View". The model's back then follows it instead of being invented from the front. Only a back view works - a side or three-quarter view distorts the model. No extra cost.
+   **Model**: **Prop** (4 credits, default) is low-cost and suits everyday props and environment pieces; **Hero** (15 credits) is far more detailed and accurate, for close-up assets, but slower.
+
+   **Back View (optional, Prop only)**: an image of the *same* subject seen from behind (rotated 180°), at the same scale, pose and style. Paste a URL or click "Select Back View". The model's back then follows it instead of being invented from the front. Only a back view works - a side or three-quarter view distorts the model. No extra cost. Hero takes the front image only.
+
+   **Also Rig the Model (optional)**: rigs it in the same call (+1 credit, charged only if it comes back rigged), with the same **Rig Type** and **Joint Naming** as the Rig tab. `humanoid_template` (the default here) suits two-armed, two-legged characters and is what animation presets need; use `general` for creatures and objects.
 
 2. **Target Face Count**: 
    - **1,000-10,000**: Low poly, mobile-friendly
@@ -277,7 +296,8 @@ The **3D Models** tab has three subtabs: **Create 3D**, **Rig Model**, and **Ani
 
 7. **Download** or continue:
    - Click **Download 3D Model** to save a GLB under `Assets/3DModels/`
-   - Or click **Use for Rigging** to send the model into the Rig tab
+   - Or click **Use for Rigging** to send the model into the Rig tab (**Use for Animation** when it was rigged on create)
+   - Or click **Use for Directional Sprites**
 
 **Note:** Texture size must be 1024 or 2048 — other values are rejected by the API.
 
@@ -299,7 +319,7 @@ Add a skeleton and skin weights so the mesh can be animated.
    - `humanoid_template` / `humanoid_template_hands` — pinned templates for two-armed, two-legged characters (needed for animation presets)
 4. Choose **Joint Naming** (default **`mixamo`** — works well with Unity Humanoid auto-mapping)
 5. Click **Rig Model** (can take several minutes)
-6. **Download Rigged Model**, or click **Use for Animation** to continue
+6. **Download Rigged Model**, or click **Use for Animation** or **Use for Directional Sprites** to continue
 
 ### Animate 3D (BETA)
 
@@ -318,9 +338,30 @@ Generate text-driven skeletal animation candidates for a **rigged** GLB.
 6. For each candidate:
    - **Open Preview** — opens the MP4 preview in your browser
    - **Download Animation GLB** — saves that clip
+   - **Use for Directional Sprites** — renders the model with that clip as 2D spritesheets
    - Or use **Download All Animation GLBs**
 
 **Important:** Animation results are **animation-only GLBs** (skeleton + clip, no mesh). Download the rigged mesh and the clips you want, then use them together in Unity (your GLB importer will bring in animation clips).
+
+### Directional Sprites (BETA)
+
+Render a 3D model into one spritesheet per direction, in a 2D style. Every direction is rendered together on the same frame size, scale and floor, so the sheets line up - a ready set for an isometric or top-down character.
+
+1. Open the **Directional Sprites** subtab (or click **Use for Directional Sprites** in Create, Rig or Animate)
+2. Provide the GLB (URL, base64, or **Select GLB from Project**). To animate it, it must be rigged
+3. Pick the **Animation**:
+   - **None** - the rest pose, one frame per direction
+   - **Animation GLB** - a clip from **Animate 3D**, made for this model's skeleton
+   - **Animation preset** - one of 600+ presets (walks, runs, attacks, idles, dances...), by category; needs a `humanoid_template` or `humanoid_template_hands` rig. **Trim to Loop** keeps the span that loops seamlessly
+   - **Animation inside the GLB** - the name of a clip the file already carries
+   - **Keep Ground Travel** (off by default keeps the character in place) and **Keep Vertical Motion** (jumps, bobbing)
+4. Pick the **Perspective** (camera height, from Horizon to Top) and the **Directions** (where the camera stands around a character facing S; **All 8** or any subset)
+5. Pick the **Style**. The list and each style's settings come from Ludo, so new styles appear without a plugin update. Some settings take a **custom colour** (`#rrggbb`); more are under **Advanced Style Settings**
+6. Click **Preview (free)** to see small animated frames for each direction. Nothing is saved
+7. Then:
+   - **Render Spritesheets** (1 credit per direction): **Frame Size** up to 640px, **Frames per Sheet** (4-100), **Seamless Loop**, optional GIFs. Each sheet lists its grid (columns x rows) and fps; slice it in Unity's Sprite Editor with **Grid By Cell Count**
+   - **Render Stills** (0.5 credits per direction): the model as it is, one large transparent image per direction. **Animate This Still** sends one to **Animate Sprite**
+8. **Save Spritesheet** / **Save Still** (PNG), **Save GIF**, or **Save All** into a folder
 
 **Importing GLB Models:**
 
@@ -732,7 +773,7 @@ The official documentation includes:
 The API provides programmatic access to all plugin features:
 
 - **Images & Animation**: Sprites, icons, UI assets, textures, spritesheet animations
-- **Video & 3D**: Motion videos, 2D-to-3D model conversion
+- **Video & 3D**: Motion videos, 2D-to-3D model conversion, rigging, 3D animation, Directional Sprites
 - **Audio**: Sound effects, music, voice generation, speech cloning
 
 ### Integration Use Cases
@@ -1050,9 +1091,9 @@ Each voice family supports its own subset of these.
 
 ## Version Information
 
-**Plugin Version**: 1.0  
-**Last Updated**: February 2026  
-**Unity Compatibility**: 2019.4+  
+**Plugin Version**: 1.0.5  
+**Last Updated**: October 2026  
+**Unity Compatibility**: 2020.2+  
 **API Version**: Ludo AI API v1
 
 ---

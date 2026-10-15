@@ -9,6 +9,9 @@ package, and driven by clicking the plugin's own buttons.
     harness/run.sh --ref v1.0.2-source     # any git revision
     harness/run.sh --filter audio          # matching scenarios only
     LUDO_API_KEY=... harness/run.sh --live # real API (LUDO_API_URL, default dev); spends credits
+    # the Directional Sprites live scenario also needs LUDO_LIVE_MODEL (a humanoid_template-rigged
+    # GLB url) and LUDO_LIVE_ANIMATION (a clip for it); contract/directional-styles.json is a
+    # snapshot of GET /assets/sprite/directional-styles that the fake API serves
 
 Needs the .NET SDK (8+). Saved files land in `$TMPDIR/ludo-unity-harness/`.
 
