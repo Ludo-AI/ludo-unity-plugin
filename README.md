@@ -7,6 +7,11 @@
 
 ---
 
+## What's New in 1.0.6
+
+- **Create 3D: Also Rig the Model uses the general rig**, which suits any shape. Ludo no longer takes a rig type there, so the **Rig Type** choice is gone from Create; the **Rig** tab still offers every rig type.
+- **Animation presets work on any rig type**, though retargeting does not succeed on every model. The help text no longer says they need a humanoid template rig.
+
 ## What's New in 1.0.5
 
 - **Directional Sprites (BETA)**: a new **3D Models** subtab that renders a 3D model into one spritesheet per direction (up to 8), in a 2D style - pixel art, anime cel, hand-painted, watercolour, comic ink, 3D render and more, each with its own settings. Animate it with a clip from **Animate 3D**, an animation preset, or an animation inside the GLB; check it with a free **Preview** first. Spritesheets cost 1 credit per direction; **stills** (the model as it is, one large image per direction, ready for **Animate Sprite**) cost 0.5.
@@ -107,7 +112,7 @@ The **Ludo AI Plugin** is a Unity Editor extension that integrates AI-powered as
 
 ### Step 1: Install the Plugin
 
-1. Download **`LudoAI_Plugin_1.0.5.unitypackage`** from the [latest release](https://github.com/Ludo-AI/ludo-unity-plugin/releases/latest)
+1. Download **`LudoAI_Plugin_1.0.6.unitypackage`** from the [latest release](https://github.com/Ludo-AI/ludo-unity-plugin/releases/latest)
 2. In Unity: **Assets** → **Import Package** → **Custom Package...**, pick the file, and click **Import** (or double-click the file with your project open)
 3. Everything lands in `Assets/LudoAIPlugin/`, dependencies included (Editor Coroutines, Newtonsoft.Json, WebP decoder)
 
@@ -274,7 +279,7 @@ The **3D Models** tab has four subtabs: **Create 3D**, **Rig Model**, **Animate 
 
    **Back View (optional, Prop only)**: an image of the *same* subject seen from behind (rotated 180°), at the same scale, pose and style. Paste a URL or click "Select Back View". The model's back then follows it instead of being invented from the front. Only a back view works - a side or three-quarter view distorts the model. No extra cost. Hero takes the front image only.
 
-   **Also Rig the Model (optional)**: rigs it in the same call (+1 credit, charged only if it comes back rigged), with the same **Rig Type** and **Joint Naming** as the Rig tab. `humanoid_template` (the default here) suits two-armed, two-legged characters and is what animation presets need; use `general` for creatures and objects.
+   **Also Rig the Model (optional)**: rigs it in the same call (+1 credit, charged only if it comes back rigged), with the general rig, which suits any shape, and the same **Joint Naming** as the Rig tab. There is no rig type to pick here: for another one, rig the model from the Rig tab.
 
 2. **Target Face Count**: 
    - **1,000-10,000**: Low poly, mobile-friendly
@@ -316,7 +321,9 @@ Add a skeleton and skin weights so the mesh can be animated.
    - `general` — any asset (default)
    - `humanoid` — anime-style characters
    - `game` — classic game-character rigs
-   - `humanoid_template` / `humanoid_template_hands` — pinned templates for two-armed, two-legged characters (needed for animation presets)
+   - `humanoid_template` / `humanoid_template_hands` — pinned templates with named joints, for two-armed, two-legged characters only
+
+   Animation presets retarget onto any rig type, though not onto every model.
 4. Choose **Joint Naming** (default **`mixamo`** — works well with Unity Humanoid auto-mapping)
 5. Click **Rig Model** (can take several minutes)
 6. **Download Rigged Model**, or click **Use for Animation** or **Use for Directional Sprites** to continue
@@ -352,7 +359,7 @@ Render a 3D model into one spritesheet per direction, in a 2D style. Every direc
 3. Pick the **Animation**:
    - **None** - the rest pose, one frame per direction
    - **Animation GLB** - a clip from **Animate 3D**, made for this model's skeleton
-   - **Animation preset** - one of 600+ presets (walks, runs, attacks, idles, dances...), by category; needs a `humanoid_template` or `humanoid_template_hands` rig. **Trim to Loop** keeps the span that loops seamlessly
+   - **Animation preset** - one of 600+ presets (walks, runs, attacks, idles, dances...), by category; any rig type can take one, though retargeting does not succeed on every model (when it does not, the render returns an error). **Trim to Loop** keeps the span that loops seamlessly
    - **Animation inside the GLB** - the name of a clip the file already carries
    - **Keep Ground Travel** (off by default keeps the character in place) and **Keep Vertical Motion** (jumps, bobbing)
 4. Pick the **Perspective** (camera height, from Horizon to Top) and the **Directions** (where the camera stands around a character facing S; **All 8** or any subset)

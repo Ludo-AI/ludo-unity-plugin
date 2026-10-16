@@ -357,7 +357,9 @@ public static class Scenarios
         body = LastBody(c, "/assets/3d-model");
         c.Check((string)body?["model"] == "hero", $"model not sent as hero ({body})");
         c.Check(body?["back_image"] == null, "hero: back_image sent (the API answers it with a 400)");
-        c.Check(body?["rig"]?.GetValue<bool>() == true && (string)body?["rig_type"] == "humanoid_template" && (string)body?["joint_naming"] == "mixamo", $"rig fields not sent ({body})");
+        c.Check(body?["rig"]?.GetValue<bool>() == true && (string)body?["joint_naming"] == "mixamo", $"rig fields not sent ({body})");
+        // Create rigs with the general rig: the API takes no rig type there.
+        c.Check(body?["rig_type"] == null, $"rig_type sent on create, which takes none ({body})");
 
         // a rigged result is ready for the next steps without the Rig tab
         var rigged = p.Get("currentRigged3DModel");
@@ -539,7 +541,7 @@ public static class Scenarios
     }
 
     // Live only (~2 credits): real styles/presets/preview/sheet/still/upscale responses parse.
-    // LUDO_LIVE_MODEL is a humanoid_template-rigged GLB, LUDO_LIVE_ANIMATION a clip for it.
+    // LUDO_LIVE_MODEL is a rigged GLB, LUDO_LIVE_ANIMATION a clip for it.
     static void DirectionalLive(Ctx c)
     {
         c.Require(c.Live, "live-only scenario");
@@ -847,7 +849,6 @@ public static class Scenarios
         ("textureSizeOptions", "/assets/3d-model", "texture_size"),
         ("textureTypeOptions", "/assets/3d-model", "texture_type"),
         ("model3DModelOptions", "/assets/3d-model", "model"),
-        ("model3DRigTypeOptions", "/assets/3d-model", "rig_type"),
         ("model3DJointNamingOptions", "/assets/3d-model", "joint_naming"),
         ("directionalPerspectiveOptions", "/assets/sprite/directional", "perspective"),
         ("directionalPerspectiveOptions", "/assets/sprite/directional-stills", "perspective"),

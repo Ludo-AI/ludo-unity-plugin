@@ -21,7 +21,7 @@ public class LudoAIPlugin : EditorWindow
     // Release version, sent on every API request as x-ludo-tool-version so Ludo can see
     // which builds are still in use. Bump it with every change under Assets/ (and the
     // README and package name to match): tools/check-version.py enforces this.
-    public const string PluginVersion = "1.0.5";
+    public const string PluginVersion = "1.0.6";
 
     // API key and URL for making requests to Ludo AI
     private string apiKey = ""; // API key loaded from EditorPrefs - user must input their own key
@@ -118,7 +118,6 @@ public class LudoAIPlugin : EditorWindow
     private string model3DTextureType = "pbr";
     private string model3DModel = "prop"; // prop | hero (hero takes the front image only)
     private bool model3DRig = false;      // also rig it in the same call
-    private string model3DCreateRigType = "humanoid_template";
     private string model3DCreateJointNaming = "mixamo";
     private Generated3DModel current3DModel = null;
     private List<Texture2D> model3DSnapshotTextures = new List<Texture2D>();
@@ -596,17 +595,13 @@ public class LudoAIPlugin : EditorWindow
         model3DRig = EditorGUILayout.Toggle("Also Rig the Model (+1 credit)", model3DRig);
         if (model3DRig)
         {
-            int createRigIndex = Array.IndexOf(model3DRigTypeOptions, model3DCreateRigType);
-            if (createRigIndex < 0) createRigIndex = Array.IndexOf(model3DRigTypeOptions, "humanoid_template");
-            createRigIndex = EditorGUILayout.Popup("Rig Type:", createRigIndex, model3DRigTypeOptions);
-            model3DCreateRigType = model3DRigTypeOptions[createRigIndex];
-
             int createNamingIndex = Array.IndexOf(model3DJointNamingOptions, model3DCreateJointNaming);
             if (createNamingIndex < 0) createNamingIndex = 0;
             createNamingIndex = EditorGUILayout.Popup("Joint Naming:", createNamingIndex, model3DJointNamingOptions);
             model3DCreateJointNaming = model3DJointNamingOptions[createNamingIndex];
 
-            GUILayout.Label("humanoid_template suits two-armed, two-legged characters and is what animation presets need; use general for creatures and objects. The rig credit is charged only if the model comes back rigged.", EditorStyles.helpBox);
+            // The API builds the general rig here; it takes no rig type (the Rig tab offers the others).
+            GUILayout.Label("Rigging here uses the general rig, which suits any shape. For another rig type, rig the model from the Rig tab. The rig credit is charged only if the model comes back rigged.", EditorStyles.helpBox);
         }
 
         GUILayout.Space(10);
@@ -770,7 +765,7 @@ public class LudoAIPlugin : EditorWindow
 
         if (model3DRigType == "humanoid_template" || model3DRigType == "humanoid_template_hands")
         {
-            GUILayout.Label("Template rigs suit two-armed, two-legged characters and are required for animation presets.", EditorStyles.helpBox);
+            GUILayout.Label("Template rigs only suit two-armed, two-legged characters. Animation presets retarget onto any rig type, though not onto every model.", EditorStyles.helpBox);
         }
 
         GUILayout.Space(5);
@@ -1275,7 +1270,7 @@ public class LudoAIPlugin : EditorWindow
         cropIndex = EditorGUILayout.Popup("Trim to Loop:", cropIndex, new[] { "Preset default", "Trim to the seamless loop", "Keep the whole clip" });
         directionalCropLoop = triStateOptions[cropIndex];
 
-        GUILayout.Label("Presets need a humanoid_template or humanoid_template_hands rig.", EditorStyles.helpBox);
+        GUILayout.Label("Any rig type can take a preset, though retargeting does not succeed on every model: when it does not, the call returns an error.", EditorStyles.helpBox);
     }
 
     private void DrawDirectionalStylePicker()
@@ -3089,7 +3084,6 @@ public class LudoAIPlugin : EditorWindow
         if (model3DRig)
         {
             requestData["rig"] = true;
-            requestData["rig_type"] = model3DCreateRigType;
             requestData["joint_naming"] = model3DCreateJointNaming;
         }
 
