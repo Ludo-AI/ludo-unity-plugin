@@ -9,6 +9,8 @@
 
 ## What's New in 1.0.7
 
+- **Art styles renamed to match Ludo**: the pixel-art styles are now **Micro Pixel**, **8-Bit Pixel**, **16-Bit Pixel**, **32-Bit Pixel** and **Free Pixel**, and Anime/Manga is **Anime**. The new names keep the old looks, though not always under the same-sounding name: the old 8-Bit is Micro Pixel, 16-Bit is 8-Bit Pixel, 32-Bit is 16-Bit Pixel, Hi-Bit is 32-Bit Pixel and Retro 2D is Free Pixel. A style chosen in an open window before the update moves to its new name.
+- **Griffin for sprite animation**: the highest-resolution model, with the best image fidelity. 10 credits per animation, always 5 seconds. The model notes now match Ludo's own.
 - **Directional Sprites: the Trim to Loop choice is gone.** Ludo now trims an animation preset by the preset's own loop flag and no longer takes a trim setting, so the plugin stops offering and sending it. Keep Ground Travel, Keep Vertical Motion and Seamless Loop work as before.
 
 ## What's New in 1.0.6
@@ -82,14 +84,14 @@ The **Ludo AI Plugin** is a Unity Editor extension that integrates AI-powered as
 ### Sprite & Image Generation
 - Generate sprites and images from text descriptions
 - 22 image types: sprites, icons, logos, UI assets, portraits, card art, backgrounds, tiles, textures and more
-- 30+ art styles (8/16/32-Bit pixel art, Low Poly, Anime/Manga, Watercolor, etc.)
+- 30+ art styles (Micro, 8-Bit, 16-Bit and 32-Bit Pixel, Free Pixel, Low Poly, Anime, Watercolor, etc.)
 - 10 perspective options (Top-Down, Isometric, Side-Scroll, High Angle, etc.)
 - Multiple aspect ratios (1:1, 16:9, 9:16, etc.)
 - Batch generation (1-8 images at once)
 
 ### Sprite Animation
 - Convert static sprites to animated spritesheets
-- Models: Hydra (with sound effect), Forge, Forge Pixel (pixel art)
+- Models: Hydra (with sound effect), Griffin (highest resolution), Forge, Forge Pixel (pixel art)
 - Control frame count (4-64 frames)
 - Frame sizes from 32x32 to 384x384, Max, AI upscale (1.5x) or matching the input frame
 - Export as spritesheet (PNG), GIF, and the sound effect (Hydra)
@@ -165,7 +167,7 @@ Let's generate a simple sprite:
 2. Go to **Sprites & Images** tab
 3. In the prompt field, enter: `"pixel art treasure chest"`
 4. Select **Image Type**: "sprite"
-5. Select **Art Style**: "16-Bit"
+5. Select **Art Style**: "16-Bit Pixel"
 6. Select **Perspective**: "Top-Down"
 7. Click **Generate Image(s)**
 8. Wait for generation (usually 10-60 seconds; the status line shows progress)
@@ -197,7 +199,7 @@ Create sprites, icons, UI assets, backgrounds, textures and more from a descript
 
 2. **Image Type**: sprite, sprite-vfx, icon, item-icon, logo, ui_asset, portrait, card-art, screenshot, splash, backgrounds (fixed, side-scrolling, vertical-scrolling, parallax layer), tile, texture, 3d, and more
 
-3. **Art Style**: e.g. 8-Bit, 16-Bit, 32-Bit, Hi-Bit, Low Poly, Anime/Manga, Chibi, Watercolor, Flat Design, or "Any style"
+3. **Art Style**: e.g. Micro Pixel, 8-Bit Pixel, 16-Bit Pixel, 32-Bit Pixel, Free Pixel, Low Poly, Anime, Chibi, Watercolor, Flat Design, or "Any style". The pixel-art styles run from the largest pixels (Micro Pixel) to the most detail (32-Bit Pixel)
 
 4. **Perspective**: e.g. Top-Down, Isometric, Side-Scroll, High Angle, 2.5D, or "Any perspective"
 
@@ -233,9 +235,10 @@ Turn static sprites into animated spritesheets.
    - **Margin Mode**: Auto, Manual, or None. In Manual, set the horizontal and vertical margins separately (e.g. more horizontal room for a sword slash, more vertical room for a jump)
 
 5. **Animation Model**:
-   - **Hydra** (default): Most capable all-around model; also generates a sound effect. 3-5 s
-   - **Forge**: Cost-effective for basic animations and simple sprites. 1-5 s
-   - **Forge Pixel**: Best for low-res pixel art. 1-5 s
+   - **Hydra** (default): Best motion and prompt adherence; also generates a sound effect. 3 credits/s, 3-5 s
+   - **Griffin**: Highest resolution and best image fidelity. 10 credits per animation, always 5 s
+   - **Forge**: Cheapest alternative, for simple body shapes and simple actions. 1.5 credits/s, 1-5 s
+   - **Forge Pixel**: Best for low-res pixel art. 1.5 credits/s, 1-5 s
 
 6. **Duration**: The options offered depend on the model
 
@@ -1038,7 +1041,7 @@ This ensures:
 
 ### Art Styles (33 Options)
 
-Any style, Cel-Shaded, Inked Painterly, Illustration, Western Cartoon, Anime/Manga, Chibi, 8-Bit, 16-Bit, 32-Bit, Hi-Bit, Retro 2D, Hand-Painted, Digital Painting, Comic Book, Block Print, Sketch, Watercolor, Stylized 3D, Pixar Style, Low Poly, Photorealistic 3D, Voxel Art, Retro 3D, Flat Design, Minimalist, Silhouette, Noir, Neon, Glitch Art, Claymation, Paper Craft, Textile
+Any style, Cel-Shaded, Inked Painterly, Illustration, Western Cartoon, Anime, Chibi, Micro Pixel, 8-Bit Pixel, 16-Bit Pixel, 32-Bit Pixel, Free Pixel, Hand-Painted, Digital Painting, Comic Book, Block Print, Sketch, Watercolor, Stylized 3D, Pixar Style, Low Poly, Photorealistic 3D, Voxel Art, Retro 3D, Flat Design, Minimalist, Silhouette, Noir, Neon, Glitch Art, Claymation, Paper Craft, Textile
 
 ### Perspectives (10 Options)
 
@@ -1049,7 +1052,8 @@ Any perspective, Side-Scroll, Isometric, High Angle, Top-Down, 2.5D, First-Perso
 | Model | Best for | Durations |
 |-------|----------|-----------|
 | Hydra (default) | Most animations; also generates a sound effect | 3, 3.5, 4, 4.5, 5 s |
-| Forge | Basic animations and simple sprites, lower cost | 1 - 5 s (0.5 s steps) |
+| Griffin | Highest resolution and best image fidelity (10 credits per animation) | 5 s |
+| Forge | Simple body shapes and simple actions, lower cost | 1 - 5 s (0.5 s steps) |
 | Forge Pixel | Low-res pixel art | 1 - 5 s (0.5 s steps) |
 
 ### Voice Presets (35 Options)

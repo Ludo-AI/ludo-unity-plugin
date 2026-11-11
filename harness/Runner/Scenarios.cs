@@ -935,6 +935,38 @@ public static class Scenarios
         c.Note($"{runs} image option payloads sent");
     }
 
+    // Six style ids were renamed (Nov 4 2026). A style kept from an older build under an
+    // old id must keep its look under the new id, never fall back to "Any style" or go out
+    // as the old id. The map is the backend's (enumAliases.artStyles): by meaning, not name.
+    static void ArtStyleRenamed(Ctx c)
+    {
+        var p = c.NewPlugin(new FakeLudoApi.Behavior { PollsUntilDone = 1, PollAfterMs = 1 });
+        Tab(p, "Sprites", "currentSpriteTab", "Image");
+        p.Set("imagePrompt", "a chest");
+        var expected = new Dictionary<string, string>
+        {
+            ["8-Bit"] = "Micro Pixel", ["16-Bit"] = "8-Bit Pixel", ["32-Bit"] = "16-Bit Pixel",
+            ["Hi-Bit"] = "32-Bit Pixel", ["Retro 2D"] = "Free Pixel", ["Anime/Manga"] = "Anime",
+        };
+        var options = ((IEnumerable)p.Get("artStyleOptions")).Cast<string>().ToList();
+        var allowed = c.Contract.Enum("POST", "/assets/image", "art_style");
+        foreach (var (old, now) in expected)
+        {
+            c.Check(!options.Contains(old), $"the dropdown still offers the old id '{old}'");
+            c.Check(options.Contains(now) && allowed.Contains(now), $"'{now}' missing from the dropdown or the contract");
+            // shown: the dropdown lands on the renamed style
+            p.Set("imageArtStyle", old);
+            p.Gui();
+            c.Check(p.Get<string>("imageArtStyle") == now, $"'{old}' shown as '{p.Get<string>("imageArtStyle")}', expected '{now}'");
+            // and goes out under its new id
+            p.Set("imageArtStyle", old);
+            p.Click("Generate Image(s)");
+            c.Require(p.RunUntilIdle(20), $"{old}: generation never finished");
+            c.Check((string)LastBody(c, "/assets/image")?["art_style"] == now, $"'{old}' sent as '{LastBody(c, "/assets/image")?["art_style"]}', expected '{now}'");
+        }
+        c.CheckClean(p, "/assets/image");
+    }
+
     // ---------------------------------------------------------------- registry
 
     public static class LiveState
@@ -981,5 +1013,6 @@ public static class Scenarios
         new("ui", "animate: every model x duration is accepted", AnimateModelDurationSweep),
         new("ui", "animate: margin modes (auto / none / manual per-axis)", AnimateMargins),
         new("ui", "image: every style/perspective/type/ratio is accepted", ImageOptionSweep),
+        new("ui", "image: a renamed art style keeps its look under the new id", ArtStyleRenamed),
     };
 }

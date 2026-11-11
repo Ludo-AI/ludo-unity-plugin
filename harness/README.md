@@ -34,7 +34,7 @@ Needs the .NET SDK (8+). Saved files land in `$TMPDIR/ludo-unity-harness/`.
 
 When the public API changes, refresh the contract from the backend and rerun:
 
-    harness/contract/sync.sh ../prometheus-server
+    harness/contract/sync.sh ../prometheus-server   # its master, read with git show
     harness/run.sh
 
 `contract/pending.json` lists fields the plugin already sends that are merged in

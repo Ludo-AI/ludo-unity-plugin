@@ -219,25 +219,45 @@ public class LudoAIPlugin : EditorWindow
 
     // Dropdown options for new features
     private readonly string[] imageTypeOptions = { "screenshot", "generic", "art", "asset", "sprite", "sprite-vfx", "sprite-tiling-horizontal", "sprite-tiling-vertical", "icon", "item-icon", "logo", "ui_asset", "portrait", "card-art", "splash", "fixed_background", "side_scrolling_background", "vertical_scrolling_background", "parallax_layer", "texture", "tile", "3d" };
-    private readonly string[] artStyleOptions = { "Any style", "Cel-Shaded", "Inked Painterly", "Illustration", "Western Cartoon", "Anime/Manga", "Chibi", "8-Bit", "16-Bit", "32-Bit", "Hi-Bit", "Retro 2D", "Hand-Painted", "Digital Painting", "Comic Book", "Block Print", "Sketch", "Watercolor", "Stylized 3D", "Pixar Style", "Low Poly", "Photorealistic 3D", "Voxel Art", "Retro 3D", "Flat Design", "Minimalist", "Silhouette", "Noir", "Neon", "Glitch Art", "Claymation", "Paper Craft", "Textile" };
+    // The pixel-art styles run from the largest pixels to the most detail: Micro, 8-Bit, 16-Bit, 32-Bit Pixel.
+    private readonly string[] artStyleOptions = { "Any style", "Cel-Shaded", "Inked Painterly", "Illustration", "Western Cartoon", "Anime", "Chibi", "Micro Pixel", "8-Bit Pixel", "16-Bit Pixel", "32-Bit Pixel", "Free Pixel", "Hand-Painted", "Digital Painting", "Comic Book", "Block Print", "Sketch", "Watercolor", "Stylized 3D", "Pixar Style", "Low Poly", "Photorealistic 3D", "Voxel Art", "Retro 3D", "Flat Design", "Minimalist", "Silhouette", "Noir", "Neon", "Glitch Art", "Claymation", "Paper Craft", "Textile" };
+    // Ludo renamed six style ids on Nov 4 2026 so each matches its label. An old id keeps
+    // its old look under the new name, which is not always the same-sounding one: the old
+    // "16-Bit" is "8-Bit Pixel" now. Same map as the API's own (enumAliases.artStyles).
+    private static readonly Dictionary<string, string> renamedArtStyles = new Dictionary<string, string>
+    {
+        ["8-Bit"] = "Micro Pixel",
+        ["16-Bit"] = "8-Bit Pixel",
+        ["32-Bit"] = "16-Bit Pixel",
+        ["Hi-Bit"] = "32-Bit Pixel",
+        ["Retro 2D"] = "Free Pixel",
+        ["Anime/Manga"] = "Anime"
+    };
+    private static string CurrentArtStyle(string style)
+    {
+        string renamed;
+        return style != null && renamedArtStyles.TryGetValue(style, out renamed) ? renamed : style;
+    }
     private readonly string[] perspectiveOptions = { "Any perspective", "Side-Scroll", "Isometric", "High Angle", "Top-Down", "2.5D", "First-Person", "Third-Person", "Over-the-Shoulder", "Free Camera" };
     private readonly string[] aspectRatioOptions = { "default", "ar_1_1", "ar_4_3", "ar_16_9", "ar_19_9", "ar_3_4", "ar_9_16", "ar_9_19" };
     private readonly string[] aspectRatioLabels = { "Default", "1:1", "4:3", "16:9", "19:9", "3:4", "9:16", "9:19" };
     
     // Current sprite animation models; the API still accepts legacy ones (blitz, eagle, ...)
     // but they are scheduled for removal.
-    private readonly string[] spritesheetModelOptions = { "hydra", "forge", "forge-pixel" };
-    private readonly string[] spritesheetModelLabels = { "Hydra", "Forge", "Forge Pixel" };
+    private readonly string[] spritesheetModelOptions = { "hydra", "griffin-hd", "forge", "forge-pixel" };
+    private readonly string[] spritesheetModelLabels = { "Hydra", "Griffin", "Forge", "Forge Pixel" };
     private readonly string[] spritesheetModelHints =
     {
-        "Most capable all-around model, also generates a sound effect. 3 credits/s.",
-        "Cost-effective for basic animations and simple sprites; may need a few tries. 1.5 credits/s.",
+        "Best motion and prompt adherence, and also generates a sound effect. 3 credits/s.",
+        "Highest resolution and best image fidelity. 10 credits per animation, always 5 seconds.",
+        "Cheapest alternative, for simple body shapes and simple actions. 1.5 credits/s.",
         "Best for low-res pixel art animations. 1.5 credits/s."
     };
     // Durations (seconds) each model accepts.
     private readonly Dictionary<string, float[]> spritesheetModelDurations = new Dictionary<string, float[]>
     {
         ["hydra"] = new[] { 3f, 3.5f, 4f, 4.5f, 5f },
+        ["griffin-hd"] = new[] { 5f },
         ["forge"] = new[] { 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f, 4.5f, 5f },
         ["forge-pixel"] = new[] { 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f, 4.5f, 5f }
     };
@@ -2140,8 +2160,10 @@ public class LudoAIPlugin : EditorWindow
         imageTypeIndex = EditorGUILayout.Popup("Image Type:", imageTypeIndex, imageTypeOptions);
         imageType = imageTypeOptions[imageTypeIndex];
 
-        // Art Style dropdown
+        // Art Style dropdown (a style kept from an older build under a renamed id keeps its look)
+        imageArtStyle = CurrentArtStyle(imageArtStyle);
         int artStyleIndex = System.Array.IndexOf(artStyleOptions, imageArtStyle);
+        if (artStyleIndex < 0) artStyleIndex = 0;
         artStyleIndex = EditorGUILayout.Popup("Art Style:", artStyleIndex, artStyleOptions);
         imageArtStyle = artStyleOptions[artStyleIndex];
 
@@ -2917,7 +2939,8 @@ public class LudoAIPlugin : EditorWindow
         };
 
         // Add optional parameters
-        if (!string.IsNullOrEmpty(imageArtStyle)&& imageArtStyle != "Any style")
+        imageArtStyle = CurrentArtStyle(imageArtStyle);
+        if (!string.IsNullOrEmpty(imageArtStyle) && imageArtStyle != "Any style")
             requestData["art_style"] = imageArtStyle;
 
         if (!string.IsNullOrEmpty(imagePerspective) && imagePerspective != "Any perspective")
