@@ -63,6 +63,7 @@ public class FakeLudoApi : IDisposable
         "/audio/speech", "/audio/speech-preset",
         "/assets/sprite/directional", "/assets/sprite/directional-stills", "/assets/image/upscale",
         "/assets/animation", "/assets/3d-model/animate-preset", "/assets/sprite/transfer-motion",
+        "/assets/image/edit",
     };
 
     // Free synchronous POSTs: validated like the rest, answered at once, never a job.
@@ -308,6 +309,21 @@ public class FakeLudoApi : IDisposable
                 if (has("preset_id") && has("animation_id")) return (400, "Provide only one of: preset_id, animation_id");
                 if (!byView && mirror) return (400, "'mirror' needs a 'preset_id' or an 'animation_id'");
                 break;
+            case "/assets/image/edit":
+                // editImage's prepare: mask_mode needs a mask, a prompt unless erasing,
+                // no reference when erasing, and a mask the size of the image.
+                bool erase = (string)body["mask_mode"] == "erase";
+                if (has("mask_mode") && !has("mask")) return (400, "Error: mask_mode needs a mask");
+                if (!erase && string.IsNullOrWhiteSpace((string)body["prompt"])) return (400, "Error: prompt is required unless mask_mode is erase");
+                if (erase && has("reference_image")) return (400, "Error: reference_image is not used with mask_mode erase");
+                if (has("mask"))
+                {
+                    var imageSize = PngSize((string)body["image"]);
+                    var maskSize = PngSize((string)body["mask"]);
+                    if (maskSize == null) return (400, "Error: the mask must be a PNG");
+                    if (imageSize != null && imageSize != maskSize) return (400, $"Error: the mask is {maskSize.Value.w}x{maskSize.Value.h} but the image is {imageSize.Value.w}x{imageSize.Value.h}; they must be the same size");
+                }
+                return null;
             case "/assets/animation":
                 if (body["augment_prompt"]?.GetValueKind() == System.Text.Json.JsonValueKind.False && !has("duration"))
                     return (400, "'duration' is required when 'augment_prompt' is false");
@@ -321,6 +337,20 @@ public class FakeLudoApi : IDisposable
             lock (Animations) if (!Animations.Any(a => (string)a["id"] == id)) return (404, "Animation not found");
         }
         return null;
+    }
+
+    // Width and height of a PNG data URI (its IHDR), or null for anything else.
+    static (int w, int h)? PngSize(string dataUri)
+    {
+        const string prefix = "data:image/png;base64,";
+        if (dataUri == null || !dataUri.StartsWith(prefix)) return null;
+        try
+        {
+            var b = Convert.FromBase64String(dataUri.Substring(prefix.Length));
+            if (b.Length < 24 || b[0] != 0x89 || b[1] != 'P') return null;
+            return ((b[16] << 24) | (b[17] << 16) | (b[18] << 8) | b[19], (b[20] << 24) | (b[21] << 16) | (b[22] << 8) | b[23]);
+        }
+        catch { return null; }
     }
 
     async Task Submit(HttpListenerContext ctx, Request rec, string api, JsonObject body)
@@ -482,6 +512,7 @@ public class FakeLudoApi : IDisposable
         switch (job.Path)
         {
             case "/assets/image":
+            case "/assets/image/edit":
                 int n = b["n"] == null ? 1 : (int)b["n"]!.GetValue<double>();
                 var arr = new JsonArray();
                 for (int i = 0; i < n; i++)

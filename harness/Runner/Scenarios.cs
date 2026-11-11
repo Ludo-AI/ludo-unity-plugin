@@ -946,6 +946,76 @@ public static class Scenarios
         c.Check(LastBody(c, "/audio/music")?["loop"]?.GetValue<bool>() == true, "music: loop not sent");
     }
 
+    // ---------------------------------------------------------------- Edit Image
+
+    static void EditImageModes(Ctx c)
+    {
+        var p = c.NewPlugin(new FakeLudoApi.Behavior { PollsUntilDone = 1, PollAfterMs = 1 });
+        c.Require(p.Has("editImageInput"), "no Edit Image in this build");
+        // from a generated image's card
+        Tab(p, "Sprites", "currentSpriteTab", "Image");
+        p.Set("imagePrompt", "a knight");
+        p.Click("Generate Image(s)");
+        c.Require(p.RunUntilIdle(20), "image generation never finished");
+        string url = (string)PluginDriver.Prop(((IList)p.Get("generatedImages"))[0], "Url");
+        p.Click("Edit");
+        c.Check(p.Get("currentSpriteTab").ToString() == "Edit" && p.Get<string>("editImageInput") == url, "the card's Edit did not open Edit Image with the image");
+        c.Check(!ButtonEnabled(p, "Edit Image (0.5 credits)"), "Edit Image enabled without a description of the change");
+        p.Set("editPrompt", "give the knight a red cape");
+        p.Click("Edit Image (0.5 credits)");
+        c.Require(p.RunUntilIdle(20), "edit never finished: " + p.Status);
+        var body = LastBody(c, "/assets/image/edit");
+        c.Check((string)body?["image"] == url && (string)body?["prompt"] == "give the knight a red cape" && body?["n"]?.GetValue<double>() == 1, $"edit body ({body})");
+        foreach (var f in new[] { "mask", "mask_mode", "image_type", "augment_prompt", "reference_image" }) c.Check(body?[f] == null, $"edit sent '{f}'");
+        c.Require(PluginDriver.Count(p.Get("editResults")) == 1, "no edited image");
+        ClickSave(c, p, "Save Edited Image", "png");
+        c.CheckClean(p, "/assets/image/edit");
+
+        // Edit with Mask: image and mask from the project, same size; a type and normal maps
+        string imageFile = Path.Combine(c.OutDir, "edit-source.png"), maskFile = Path.Combine(c.OutDir, "edit-mask.png");
+        File.WriteAllBytes(imageFile, UnityEngine.FakeImage.Png(512, 384));
+        File.WriteAllBytes(maskFile, UnityEngine.FakeImage.Png(512, 384));
+        Harness.OpenFilePanel = (title, ext) => title.Contains("Mask") ? maskFile : imageFile;
+        p.Click("Select from Project");
+        p.Set("editMode", "mask_replace");
+        p.Gui();
+        c.Check(!ButtonEnabled(p, "Edit with Mask (1 credit)"), "Edit with Mask enabled without a mask");
+        p.Click("Select Mask");
+        p.Set("editImageType", "sprite");
+        p.Set("editSaveNormals", true);
+        p.Set("editPrompt", "a wooden shield");
+        p.Click("Edit with Mask (1 credit)");
+        c.Require(p.RunUntilIdle(20), "masked edit never finished: " + p.Status);
+        body = LastBody(c, "/assets/image/edit");
+        c.Check(((string)body?["mask"] ?? "").StartsWith("data:image/png;base64,") && (string)body?["mask_mode"] == "replace" && (string)body?["prompt"] == "a wooden shield", $"mask edit body (mask_mode {body?["mask_mode"]}, prompt {body?["prompt"]})");
+        c.Check((string)body?["image_type"] == "sprite" && body?["save_normals"]?.GetValue<bool>() == true, "image_type / save_normals not sent");
+        SaveWithNormal(c, p, "Save Edited Image");
+
+        // Erase with Mask: no prompt and no reference go out, 1 credit each
+        p.Set("editMode", "mask_erase");
+        p.Set("editReferenceImage", FakeFile(c, "ref.png"));
+        p.Set("editCount", 2);
+        p.Click("Erase with Mask (2 credits)");
+        c.Require(p.RunUntilIdle(20), "erase never finished: " + p.Status);
+        body = LastBody(c, "/assets/image/edit");
+        c.Check((string)body?["mask_mode"] == "erase" && body?["prompt"] == null && body?["reference_image"] == null && body?["n"]?.GetValue<double>() == 2, $"erase body ({body?["mask_mode"]}, prompt {body?["prompt"]}, ref {body?["reference_image"]})");
+        c.Check(PluginDriver.Count(p.Get("editResults")) == 2, "erase results");
+        c.CheckClean(p, "/assets/image/edit");
+
+        // a mask of another size: refused before any request when both sizes are known...
+        File.WriteAllBytes(maskFile, UnityEngine.FakeImage.Png(256, 256));
+        p.Click("Select Mask");
+        int posts = c.Api.Posts("/api/assets/image/edit").Count;
+        c.Check(!ButtonEnabled(p, "Erase with Mask (2 credits)"), "a mask of the wrong size can be sent");
+        c.Check(c.Api.Posts("/api/assets/image/edit").Count == posts, "a mismatched mask was sent");
+        // ...and the API's 400 is shown when the image's size is not known here (a pasted image)
+        p.Set("editImageInput", "data:image/png;base64," + Convert.ToBase64String(UnityEngine.FakeImage.Png(512, 384)));
+        p.Set("editSourceWidth", 0);
+        p.Click("Erase with Mask (2 credits)");
+        c.Require(p.RunUntilIdle(20), "stuck after a 400");
+        c.Check(p.ErrorDialogs.Any(d => d.Message.Contains("same size")), $"mask size 400 not shown; dialogs: {string.Join(" / ", p.Dialogs)}");
+    }
+
     // ---------------------------------------------------------------- Upscale Image
 
     static void Upscale(Ctx c)
@@ -1143,7 +1213,7 @@ public static class Scenarios
         var p = c.NewPlugin();
         var screens = new (string tab, string field, string[] subs)[]
         {
-            ("Sprites", "currentSpriteTab", new[] { "Image", "ImageToSpritesheet", "Upscale" }),
+            ("Sprites", "currentSpriteTab", new[] { "Image", "ImageToSpritesheet", "Upscale", "Edit" }),
             ("Models", "currentModelTab", new[] { "Create", "Rig", "Animate", "Directional" }),
             ("Audio", "currentAudioTab", new[] { "SoundEffect", "Music", "Voice", "Speech", "SpeechPreset" }),
             ("Settings", null, new string[] { null }),
@@ -1186,6 +1256,7 @@ public static class Scenarios
         ("artStyleOptions", "/assets/image", "art_style"),
         ("perspectiveOptions", "/assets/image", "perspective"),
         ("aspectRatioOptions", "/assets/image", "aspect_ratio"),
+        ("editImageTypeOptions", "/assets/image/edit", "image_type"),
         ("spritesheetModelOptions", "/assets/sprite/animate", "model"),
         ("spritesheetImageTypeOptions", "/assets/sprite/animate", "image_type"),
         ("frameOptions", "/assets/sprite/animate", "frames"),
@@ -1344,6 +1415,7 @@ public static class Scenarios
         new("failure", "directional preview replaced by a newer one (204)", DirectionalPreviewSuperseded),
         new("failure", "directional styles unavailable: message and retry", DirectionalStylesUnavailable),
         new("generate", "upscale image: from a card, from the project, size limit", Upscale),
+        new("generate", "edit image: edit, edit with mask, erase with mask, mask size", EditImageModes),
         new("live", "directional sprites + upscale against the live API", DirectionalLive, LiveToo: true),
         new("generate", "audio: sound effect", c => Audio(c, "SoundEffect", "/audio/sound-effect", p => { p.Set("soundEffectDescription", "sword clash"); p.Set("soundEffectDuration", 2f); }, "Generate Sound Effect", "currentSoundEffect", "Save Sound Effect"), LiveToo: true),
         new("generate", "audio: music", c => Audio(c, "Music", "/audio/music", p => p.Set("musicDescription", "calm village theme"), "Generate Music", "currentMusic", "Save Music"), LiveToo: true),

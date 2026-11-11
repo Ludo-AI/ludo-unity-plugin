@@ -52,7 +52,7 @@ public class LudoAIPlugin : EditorWindow
     private ModelTabState currentModelTab = ModelTabState.Create;
 
     // Sprite tab sub-state
-    private enum SpriteTabState { Image, ImageToSpritesheet, Upscale }
+    private enum SpriteTabState { Image, ImageToSpritesheet, Upscale, Edit }
     private SpriteTabState currentSpriteTab = SpriteTabState.Image;
 
     // Audio tab sub-state
@@ -225,6 +225,30 @@ public class LudoAIPlugin : EditorWindow
     private const int MaxUploadBytes = 15 * 1024 * 1024;
     private Vector2 upscaleScrollPosition;
 
+    // Edit Image Variables: Ludo's image edit modes on one source image
+    private string editImageInput = "";
+    private int editSourceWidth = 0;  // 0 = not known (a pasted URL: the server checks)
+    private int editSourceHeight = 0;
+    private string editMode = "edit";
+    private string editPrompt = "";
+    private string editReferenceImage = "";
+    private string editImageType = "default"; // "default" leaves it out: a Ludo image keeps its own type
+    private int editCount = 1;
+    private bool editSaveNormals = false;
+    private string editMaskInput = "";
+    private int editMaskWidth = 0;
+    private int editMaskHeight = 0;
+    private List<GeneratedImage> editResults = new List<GeneratedImage>();
+    private Vector2 editScrollPosition;
+    private readonly string[] editModeOptions = { "edit", "mask_replace", "mask_erase" };
+    private readonly string[] editModeLabels = { "Edit Image", "Edit with Mask", "Erase with Mask" };
+    private readonly string[] editModeHints =
+    {
+        "Modifications with textual instructions. The whole image is redrawn, so colours and details outside the change can shift. 0.5 credits per result.",
+        "Substitute the masked area with new content: only the white part of the mask changes. 1 credit per result.",
+        "Remove the selected masked area: what is under the white part of the mask is erased. No prompt. 1 credit per result."
+    };
+
     // Audio Generation Variables
     private string soundEffectDescription = "";
     private float soundEffectDuration = 0f;
@@ -282,6 +306,7 @@ public class LudoAIPlugin : EditorWindow
         return style != null && renamedArtStyles.TryGetValue(style, out renamed) ? renamed : style;
     }
     private readonly string[] perspectiveOptions = { "Any perspective", "Side-Scroll", "Isometric", "High Angle", "Top-Down", "2.5D", "First-Person", "Third-Person", "Over-the-Shoulder", "Free Camera" };
+    private readonly string[] editImageTypeOptions = { "default", "screenshot", "generic", "art", "asset", "sprite", "sprite-vfx", "sprite-tiling-horizontal", "sprite-tiling-vertical", "icon", "item-icon", "logo", "ui_asset", "portrait", "card-art", "splash", "fixed_background", "side_scrolling_background", "vertical_scrolling_background", "parallax_layer", "texture", "tile", "3d" };
     private readonly string[] aspectRatioOptions = { "default", "ar_1_1", "ar_4_3", "ar_16_9", "ar_19_9", "ar_3_4", "ar_9_16", "ar_9_19" };
     private readonly string[] aspectRatioLabels = { "Default", "1:1", "4:3", "16:9", "19:9", "3:4", "9:16", "9:19" };
     
@@ -2282,6 +2307,277 @@ public class LudoAIPlugin : EditorWindow
     }
 
     // ============================
+    // ======== EDIT IMAGE ========
+    // ============================
+    // The web app's image edit modes, on one image: from a card's Edit button, the
+    // project, or a URL. A mask is a black-and-white image the user picks (white = the
+    // part to change), the same size as the image; there is no painter in the editor.
+
+    private void UseForEdit(string url, int width, int height)
+    {
+        editImageInput = url ?? "";
+        editSourceWidth = width;
+        editSourceHeight = height;
+        currentTab = TabState.Sprites;
+        currentSpriteTab = SpriteTabState.Edit;
+        statusMessage = "Image loaded into Edit Image.";
+    }
+
+    private bool EditUsesMask() { return editMode == "mask_replace" || editMode == "mask_erase"; }
+
+    private bool EditMaskSizeMismatch()
+    {
+        return editSourceWidth > 0 && editMaskWidth > 0 && (editSourceWidth != editMaskWidth || editSourceHeight != editMaskHeight);
+    }
+
+    private void DrawEditImageUI()
+    {
+        editScrollPosition = GUILayout.BeginScrollView(editScrollPosition);
+
+        GUILayout.Label("Edit Image", EditorStyles.boldLabel);
+        GUILayout.Space(5);
+
+        GUILayout.BeginHorizontal();
+        GUILayout.Label("Image URL or Base64:");
+        if (GUILayout.Button("Select from Project", GUILayout.Width(150)))
+        {
+            string path = EditorUtility.OpenFilePanel("Select Image to Edit", "Assets", "png,jpg,jpeg,webp");
+            if (!string.IsNullOrEmpty(path))
+            {
+                int w, h;
+                string dataUri = LoadImageFileUnchangedAsDataUri(path, out w, out h);
+                if (!string.IsNullOrEmpty(dataUri))
+                {
+                    editImageInput = dataUri;
+                    editSourceWidth = w;
+                    editSourceHeight = h;
+                    statusMessage = $"Image loaded from project ({w}x{h})";
+                }
+            }
+        }
+        GUILayout.EndHorizontal();
+        string edited = EditorGUILayout.TextField(editImageInput);
+        if (edited != editImageInput)
+        {
+            editImageInput = edited;
+            editSourceWidth = editSourceHeight = 0;
+        }
+        if (editSourceWidth > 0) GUILayout.Label($"Source: {editSourceWidth}x{editSourceHeight}", EditorStyles.miniLabel);
+
+        GUILayout.Space(10);
+
+        int modeIndex = Array.IndexOf(editModeOptions, editMode);
+        if (modeIndex < 0) modeIndex = 0;
+        modeIndex = EditorGUILayout.Popup("Mode:", modeIndex, editModeLabels);
+        editMode = editModeOptions[modeIndex];
+        GUILayout.Label(editModeHints[modeIndex], EditorStyles.helpBox);
+
+        GUILayout.Space(5);
+
+        bool ready = !isProcessing && !string.IsNullOrEmpty(editImageInput);
+        string action = "Edit Image";
+        if (editMode == "edit" || EditUsesMask())
+        {
+            if (EditUsesMask())
+            {
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Mask (white = change, black = keep):");
+                if (GUILayout.Button("Select Mask", GUILayout.Width(150)))
+                {
+                    string path = EditorUtility.OpenFilePanel("Select Mask Image", "Assets", "png,jpg,jpeg,webp");
+                    if (!string.IsNullOrEmpty(path))
+                    {
+                        int w, h;
+                        string dataUri = LoadImageFileAsPngDataUri(path, out w, out h);
+                        if (!string.IsNullOrEmpty(dataUri))
+                        {
+                            editMaskInput = dataUri;
+                            editMaskWidth = w;
+                            editMaskHeight = h;
+                            statusMessage = $"Mask loaded from project ({w}x{h})";
+                        }
+                    }
+                }
+                GUILayout.EndHorizontal();
+                string mask = EditorGUILayout.TextField(editMaskInput);
+                if (mask != editMaskInput)
+                {
+                    editMaskInput = mask;
+                    editMaskWidth = editMaskHeight = 0;
+                }
+                if (EditMaskSizeMismatch())
+                {
+                    EditorGUILayout.HelpBox($"The mask is {editMaskWidth}x{editMaskHeight}, the image {editSourceWidth}x{editSourceHeight}: it must be exactly the same size.", MessageType.Warning);
+                }
+                else
+                {
+                    GUILayout.Label("A PNG exactly the same size as the image: paint the part to change white and the rest black, in any image editor.", EditorStyles.helpBox);
+                }
+                ready &= !string.IsNullOrEmpty(editMaskInput) && !EditMaskSizeMismatch();
+                action = editMode == "mask_erase" ? "Erase with Mask" : "Edit with Mask";
+            }
+
+            if (editMode != "mask_erase")
+            {
+                GUILayout.Label(editMode == "edit"
+                    ? "Changes (e.g. \"give the character a hat\", \"make it darker\"):"
+                    : "What should fill the masked area (e.g. \"a mountain landscape\"):");
+                editPrompt = EditorGUILayout.TextArea(editPrompt, GUILayout.Height(50));
+                ready &= !string.IsNullOrWhiteSpace(editPrompt);
+                GUILayout.Label("Describe only the change. Never ask for a transparent background: a sprite keeps its transparency on its own.", EditorStyles.helpBox);
+
+                GUILayout.Label("Reference Image (optional, URL or Base64):");
+                editReferenceImage = EditorGUILayout.TextField(editReferenceImage);
+            }
+
+            int typeIndex = Array.IndexOf(editImageTypeOptions, editImageType);
+            if (typeIndex < 0) typeIndex = 0;
+            var typeLabels = (string[])editImageTypeOptions.Clone();
+            typeLabels[0] = "Keep the image's own";
+            typeIndex = EditorGUILayout.Popup("Image Type:", typeIndex, typeLabels);
+            editImageType = editImageTypeOptions[typeIndex];
+            GUILayout.Label("A Ludo image keeps its own type. Set one for an image from elsewhere, so a sprite is edited as a sprite.", EditorStyles.helpBox);
+
+            editCount = EditorGUILayout.IntSlider("Variations:", editCount, 1, 4);
+            editSaveNormals = EditorGUILayout.Toggle("Normal Map", editSaveNormals);
+            if (editSaveNormals) GUILayout.Label(NormalMapHint("Free."), EditorStyles.helpBox);
+
+            float cost = editCount * (EditUsesMask() ? 1f : 0.5f);
+            action = $"{action} ({cost.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} credit{(cost == 1f ? "" : "s")})";
+        }
+
+        GUILayout.Space(10);
+
+        GUI.enabled = ready;
+        if (GUILayout.Button(action, GUILayout.Height(30)))
+        {
+            isProcessing = true;
+            statusMessage = "Editing image...";
+            EditorCoroutineUtility.StartCoroutineOwnerless(EditImage());
+        }
+        GUI.enabled = true;
+
+        GUILayout.Space(10);
+        GUILayout.Label($"Status: {statusMessage}");
+        GUILayout.Space(10);
+
+        DrawEditResults();
+
+        GUILayout.EndScrollView();
+    }
+
+    private void DrawEditResults()
+    {
+        if (editResults.Count == 0) return;
+        GUILayout.Label($"Edited Images ({editResults.Count}):", EditorStyles.boldLabel);
+        foreach (var image in editResults)
+        {
+            GUILayout.BeginVertical("box");
+            GUILayout.BeginHorizontal();
+            Texture2D preview;
+            if (imagePreviewCache.TryGetValue(image.Url ?? "", out preview) && preview != null)
+                GUILayout.Label(preview, GUILayout.Width(100), GUILayout.Height(100));
+            else
+                GUILayout.Label("Loading...", GUILayout.Width(100), GUILayout.Height(100));
+            GUILayout.BeginVertical();
+            if (image.Width > 0) GUILayout.Label($"Size: {image.Width}x{image.Height}", EditorStyles.miniLabel);
+            if (!string.IsNullOrEmpty(image.NormalMapUrl)) GUILayout.Label("With normal map (saved next to it)", EditorStyles.miniLabel);
+            if (GUILayout.Button("Save Edited Image", GUILayout.Height(25)))
+            {
+                SaveImageToFile(image);
+            }
+            if (GUILayout.Button("Edit This Result", GUILayout.Height(25)))
+            {
+                UseForEdit(image.Url, image.Width, image.Height);
+            }
+            GUILayout.EndVertical();
+            GUILayout.EndHorizontal();
+            GUILayout.EndVertical();
+        }
+    }
+
+    private IEnumerator EditImage()
+    {
+        bool erase = editMode == "mask_erase";
+        var payload = new Dictionary<string, object> { ["image"] = editImageInput, ["n"] = editCount };
+        if (!erase)
+        {
+            payload["prompt"] = editPrompt.Trim();
+            if (!string.IsNullOrWhiteSpace(editReferenceImage)) payload["reference_image"] = editReferenceImage.Trim();
+        }
+        if (EditUsesMask())
+        {
+            payload["mask"] = editMaskInput;
+            payload["mask_mode"] = erase ? "erase" : "replace";
+        }
+        if (editImageType != "default") payload["image_type"] = editImageType;
+        if (editSaveNormals) payload["save_normals"] = true;
+
+        var job = new EditorHttpResult();
+        yield return RunApiJob("/assets/image/edit", payload, "Editing image", job);
+
+        if (!job.Success)
+        {
+            statusMessage = FormatEditorHttpError("editing image", job);
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog("Edit Image Error", statusMessage, "OK");
+            isProcessing = false;
+            yield break;
+        }
+
+        try
+        {
+            var images = JsonConvert.DeserializeObject<List<GeneratedImage>>(job.Body);
+            if (images != null && images.Count > 0)
+            {
+                editResults = images;
+                foreach (var image in images) EditorCoroutineUtility.StartCoroutineOwnerless(LoadImagePreview(image));
+                statusMessage = $"Edited: {images.Count} image(s). The original is kept.";
+            }
+            else
+            {
+                statusMessage = "The edit came back with no image.";
+                EditorUtility.DisplayDialog("Edit Image Error", statusMessage, "OK");
+            }
+        }
+        catch (Exception e)
+        {
+            statusMessage = $"Error reading the edited images: {e.Message}";
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog("Edit Image Error", statusMessage, "OK");
+        }
+        isProcessing = false;
+    }
+
+    // A mask must be a PNG: whatever the file is, it is decoded and sent as PNG, at its own size.
+    private string LoadImageFileAsPngDataUri(string path, out int width, out int height)
+    {
+        width = height = 0;
+        try
+        {
+            byte[] bytes = File.ReadAllBytes(path);
+            Texture2D texture = DecodeImageBytesToTexture(bytes);
+            if (texture == null)
+            {
+                statusMessage = "Could not decode image. Use PNG, JPEG, or WebP.";
+                EditorUtility.DisplayDialog("Error", statusMessage, "OK");
+                return null;
+            }
+            width = texture.width;
+            height = texture.height;
+            byte[] png = texture.EncodeToPNG();
+            UnityEngine.Object.DestroyImmediate(texture);
+            return "data:image/png;base64," + Convert.ToBase64String(png);
+        }
+        catch (Exception e)
+        {
+            statusMessage = $"Error loading image: {e.Message}";
+            EditorUtility.DisplayDialog("Error", $"Failed to load image: {e.Message}", "OK");
+            return null;
+        }
+    }
+
+    // ============================
     // ===== REMOTE IMAGES ========
     // ============================
 
@@ -2498,6 +2794,8 @@ public class LudoAIPlugin : EditorWindow
             currentSpriteTab = SpriteTabState.ImageToSpritesheet;
         if (GUILayout.Toggle(currentSpriteTab == SpriteTabState.Upscale, "Upscale Image", EditorStyles.toolbarButton))
             currentSpriteTab = SpriteTabState.Upscale;
+        if (GUILayout.Toggle(currentSpriteTab == SpriteTabState.Edit, "Edit Image", EditorStyles.toolbarButton))
+            currentSpriteTab = SpriteTabState.Edit;
         GUILayout.EndHorizontal();
 
         GUILayout.Space(10);
@@ -2512,6 +2810,9 @@ public class LudoAIPlugin : EditorWindow
                 break;
             case SpriteTabState.Upscale:
                 DrawUpscaleImageUI();
+                break;
+            case SpriteTabState.Edit:
+                DrawEditImageUI();
                 break;
         }
     }
@@ -2640,6 +2941,10 @@ public class LudoAIPlugin : EditorWindow
                     UseForUpscale(image.Url, image.Width, image.Height);
                 }
                 GUI.enabled = true;
+                if (GUILayout.Button("Edit", GUILayout.Height(25)))
+                {
+                    UseForEdit(image.Url, image.Width, image.Height);
+                }
                 GUILayout.EndVertical();
                 
                 GUILayout.EndHorizontal();

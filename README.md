@@ -13,6 +13,7 @@
 - **Mirror**: play an Animation Clip or one of My Animations on the other side, left and right swapped, in all three tools.
 - **Animate 3D** can retarget an Animation Clip or one of My Animations onto a rigged model (0.5 credits), as well as animate from a text prompt.
 - **Animate Sprite** can play an Animation Clip or one of My Animations on a sprite, seen from the camera view the sprite is drawn from, as well as animate from a text description.
+- **Edit Image**: a new **Sprites & Images** subtab, and an **Edit** button on every generated image. **Edit Image** changes an image from a description (0.5 credits); **Edit with Mask** and **Erase with Mask** change or remove only the area a mask image marks (1 credit). Masks are images you pick from the project.
 - **Normal maps** for 2D lighting: a **Normal Map** option on **Generate Sprite** (free), **Animate Sprite** (0.5 credits) and **Directional Sprites** (0.5 credits per sheet, free with stills). Saving the image or sheet saves its normal map next to it as `<name>_normal.png`.
 - **Use Pixel Grid** on **Animate Sprite**: turn it off when a detected pixel grid is wrong for your sprite.
 - **Loop** for sound effects and music: generate audio that loops seamlessly.
@@ -95,6 +96,7 @@ The **Ludo AI Plugin** is a Unity Editor extension that integrates AI-powered as
 - 10 perspective options (Top-Down, Isometric, Side-Scroll, High Angle, etc.)
 - Multiple aspect ratios (1:1, 16:9, 9:16, etc.)
 - Batch generation (1-8 images at once)
+- Edit an image with a description, or only a masked area (Edit with Mask, Erase with Mask)
 
 ### Sprite Animation
 - Convert static sprites to animated spritesheets
@@ -276,6 +278,18 @@ The same picture at a higher resolution: up to 4x, capped at 2048px on the longe
 1. Click **Upscale** on a generated image, or open the **Upscale Image** subtab and paste a URL or **Select from Project** (the file is sent as it is, not resized)
 2. The source must be under 2048px on its longest side; larger images can't be upscaled
 3. Click **Upscale Image**, then **Save Upscaled Image** (PNG). The upscaled image is a new image; the original is kept
+
+### Edit Image
+
+Ludo's image edit modes, on one image. Click **Edit** on a generated image, or open the **Edit Image** subtab and paste a URL or **Select from Project** (sent as it is, at its own size). Pick the **Mode**:
+
+- **Edit Image** (0.5 credits per result): describe the changes ("give the character a hat", "make it darker"). The whole image is redrawn, so colours and details outside the change can shift
+- **Edit with Mask** (1 credit per result): only the white part of the mask changes, filled from your description
+- **Erase with Mask** (1 credit per result): what is under the white part of the mask is removed. No description
+
+A **mask** is a black-and-white image exactly the same size as the image: white marks the part to change, black the part to keep. Paint it in any image editor and pick it with **Select Mask** (it is sent as a PNG); the plugin has no mask painter. When both sizes are known, a mask of another size is refused before anything is sent.
+
+Options: an optional **Reference Image** (not with Erase), **Image Type** (a Ludo image keeps its own; set one for an image from elsewhere so a sprite is edited as a sprite), 1 to 4 **Variations** and a free **Normal Map**. Describe only the change, and never ask for a transparent background: a sprite keeps its transparency on its own. **Save Edited Image** saves a PNG; **Edit This Result** edits it again. The original is kept.
 
 ---
 
