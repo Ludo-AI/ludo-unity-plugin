@@ -32,6 +32,7 @@ public class FakeLudoApi : IDisposable
         public int StylesStatus = 200;          // status for GET directional-styles
         public int AnimationsStatus = 200;      // status for GET /assets/animations (My Animations)
         public List<JsonObject> MyAnimations;   // the account's animations at the start (newest first)
+        public int AccessoryStatus;             // non-zero: the accessory fit / attach answer this
     }
 
     public class Request
@@ -204,6 +205,52 @@ public class FakeLudoApi : IDisposable
                 var list = new JsonArray();
                 lock (Animations) foreach (var a in Animations.Take(limit)) list.Add(a.DeepClone());
                 await Json(ctx, rec, 200, new JsonObject { ["animations"] = list });
+                return;
+            }
+
+            if (req.HttpMethod == "POST" && (api == "/assets/sprite/directional-accessory-fit" || api == "/assets/sprite/directional-accessories"))
+            {
+                // Free and synchronous, like the preview.
+                string text = await new StreamReader(req.InputStream, Encoding.UTF8).ReadToEndAsync();
+                var body = JsonNode.Parse(text)!.AsObject();
+                rec.Body = body;
+                var findings = contract.Validate("POST", api, body);
+                rec.Findings = findings;
+                if (!findings.Ok) { await Json(ctx, rec, 400, new JsonObject { ["message"] = "Request validation failed: " + string.Join("; ", findings.Errors) }); return; }
+                if (B.AccessoryStatus != 0) { await Json(ctx, rec, B.AccessoryStatus, new JsonObject { ["message"] = "This model has no skeleton. Rig it first." }); return; }
+                if (api.EndsWith("-fit"))
+                {
+                    string kind = (string)body["kind"] ?? (((string)body["name"] ?? "").Contains("sword") ? "blade" : "other");
+                    string point = (string)body["point"] ?? (kind is "bow" or "shield" ? "left_hand" : kind is "helmet" or "hat" ? "head" : kind == "back" ? "back" : "right_hand");
+                    string bone = (string)body["bone"] ?? (point == "right_hand" ? "mixamorig:RightHand" : point == "left_hand" ? "mixamorig:LeftHand" : "mixamorig:Head");
+                    double size = body["size"]?.GetValue<double>() ?? 100;
+                    var fit = new JsonObject
+                    {
+                        ["kind"] = kind, ["point"] = point, ["bone"] = bone, ["size"] = size,
+                        ["move"] = body["move"]?.DeepClone() ?? new JsonObject { ["forward"] = 0, ["up"] = 0, ["out"] = 0 },
+                        ["turn"] = body["turn"]?.DeepClone() ?? new JsonObject { ["forward"] = 0, ["up"] = 0, ["out"] = 0 },
+                        ["flip"] = body["flip"]?.GetValue<bool>() ?? false, ["grip"] = body["grip"]?.GetValue<bool>() ?? true,
+                        ["placement"] = new JsonObject { ["bone"] = bone, ["point"] = point, ["kind"] = kind, ["flipped"] = false, ["grip"] = true, ["base_scale"] = 0.42, ["position"] = new JsonArray(0.01, 0.08, 0.0), ["quaternion"] = new JsonArray(0, 0, 0, 1), ["scale"] = new JsonArray(0.42 * size / 100, 0.42 * size / 100, 0.42 * size / 100), ["fit_size"] = size },
+                        ["checks"] = new JsonObject { ["sink"] = 0.4, ["inside"] = 1.2, ["grip_gap"] = 0.8 },
+                        ["points"] = new JsonArray(new JsonObject { ["point"] = "right_hand", ["bone"] = "mixamorig:RightHand" }, new JsonObject { ["point"] = "left_hand", ["bone"] = "mixamorig:LeftHand" }, new JsonObject { ["point"] = "head", ["bone"] = "mixamorig:Head" }),
+                    };
+                    if (body["preview"]?.GetValue<bool>() != false)
+                    {
+                        fit["model_url"] = F($"fit-{Guid.NewGuid():N}.glb");
+                        fit["previews"] = new JsonArray(
+                            new JsonObject { ["direction"] = "SW", ["num_frames"] = 4, ["fps"] = 8, ["frame_urls"] = new JsonArray(F("fit-SW-0.webp"), F("fit-SW-1.webp"), F("fit-SW-2.webp"), F("fit-SW-3.webp")) },
+                            new JsonObject { ["direction"] = "SE", ["num_frames"] = 4, ["fps"] = 8, ["frame_urls"] = new JsonArray(F("fit-SE-0.webp"), F("fit-SE-1.webp"), F("fit-SE-2.webp"), F("fit-SE-3.webp")) });
+                    }
+                    await Json(ctx, rec, 200, fit);
+                }
+                else
+                {
+                    var items = new JsonArray();
+                    foreach (var it in body["items"]!.AsArray())
+                        items.Add(new JsonObject { ["name"] = (string)it!["name"] ?? "item", ["placement"] = it["placement"]?.DeepClone() ?? new JsonObject { ["bone"] = "mixamorig:RightHand" } });
+                    bool ours = ((string)body["model"] ?? "").StartsWith(Root);
+                    await Json(ctx, rec, 200, new JsonObject { ["model_url"] = F($"with-items-{Guid.NewGuid():N}.glb"), ["saved"] = ours && body["save_on_model"]?.GetValue<bool>() != false, ["items"] = items, ["kept"] = new JsonArray() });
+                }
                 return;
             }
 

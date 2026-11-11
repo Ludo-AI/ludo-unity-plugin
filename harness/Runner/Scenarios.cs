@@ -1126,6 +1126,85 @@ public static class Scenarios
         c.Check((int)http.Send(req).StatusCode == 400, "fake: an empty starting image request is not a 400");
     }
 
+    // ---------------------------------------------------------------- Directional Sprites: accessories
+
+    static void DirectionalAccessories(Ctx c)
+    {
+        var p = DirectionalPlugin(c, new FakeLudoApi.Behavior { PollsUntilDone = 1, PollAfterMs = 1 });
+        string model = FakeFile(c, "rigged.glb");
+        p.Set("directionalModelInput", model);
+        c.Check(!ButtonShown(p, "Fit the Item (free)"), "the Accessories step is open before it is asked for");
+        p.Set("directionalShowAccessories", true);
+        c.Check(!ButtonEnabled(p, "Fit the Item (free)"), "can fit with no item");
+
+        // the automatic fit: nothing but the model, the item and its name
+        p.Set("accessoryItemInput", FakeFile(c, "sword.glb"));
+        p.Set("accessoryName", "rusty sword");
+        p.Click("Fit the Item (free)");
+        c.Require(p.RunUntilIdle(20), "fit never finished: " + p.Status);
+        var body = LastBody(c, "/assets/sprite/directional-accessory-fit");
+        c.Check((string)body?["model"] == model && (string)body?["item"] == FakeFile(c, "sword.glb") && (string)body?["name"] == "rusty sword", $"fit body ({body})");
+        foreach (var f in new[] { "kind", "point", "bone", "size", "move", "turn", "flip", "grip", "request_id" }) c.Check(body?[f] == null, $"automatic fit sent '{f}'");
+        var fit = p.Get("accessoryFit");
+        c.Require(fit != null && (string)PluginDriver.Prop(fit, "Kind") == "blade", "fit not read");
+        var frames = (IDictionary)p.Get("accessoryPreviewFrames");
+        c.Check(frames.Count == 2 && frames.Values.Cast<IList>().All(l => l.Count == 4 && l.Cast<object>().All(t => t != null)), "fit previews (SW, SE, 4 frames each) not loaded");
+
+        // adjusted: size, move, turn, end for end; each sent in full
+        p.Set("accessorySize", 150f);
+        p.Set("accessoryMoveUp", 5f);
+        p.Set("accessoryTurnOut", 90f);
+        p.Set("accessoryFlip", true);
+        p.Click("Fit the Item (free)");
+        c.Require(p.RunUntilIdle(20), "adjusted fit never finished");
+        body = LastBody(c, "/assets/sprite/directional-accessory-fit");
+        c.Check(body?["size"]?.GetValue<double>() == 150 && body?["move"]?["up"]?.GetValue<double>() == 5 && body?["move"]?["forward"]?.GetValue<double>() == 0
+            && body?["turn"]?["out"]?.GetValue<double>() == 90 && body?["flip"]?.GetValue<bool>() == true && body?["grip"] == null, $"adjusted fit body ({body})");
+        p.Click("Add to the List");
+        // a second item, never fitted: it goes with its adjustments instead of a placement
+        p.Set("accessoryItemInput", FakeFile(c, "shield.glb"));
+        p.Set("accessoryKind", "shield");
+        p.Set("accessorySize", 100f); p.Set("accessoryMoveUp", 0f); p.Set("accessoryTurnOut", 0f); p.Set("accessoryFlip", false);
+        p.Set("accessoryGrip", false);
+        p.Click("Add to the List");
+        c.Check(PluginDriver.Count(p.Get("directionalAccessories")) == 2, "items not listed");
+
+        p.Click("Put Accessories on the Model (free)");
+        c.Require(p.RunUntilIdle(20), "attach never finished: " + p.Status);
+        body = LastBody(c, "/assets/sprite/directional-accessories");
+        var items = body?["items"]?.AsArray();
+        c.Require(items != null && items.Count == 2, $"attach items ({body})");
+        c.Check((string)body!["model"] == model, "attach did not go on the model");
+        c.Check(items[0]!["placement"]?["base_scale"] != null && (string)items[0]!["name"] == "rusty sword" && items[0]!["size"] == null, $"a fitted item goes with its placement only ({items[0]})");
+        c.Check(items[1]!["placement"] == null && (string)items[1]!["kind"] == "shield" && items[1]!["grip"]?.GetValue<bool>() == false, $"an unfitted item goes with its adjustments ({items[1]})");
+        string composed = p.Get<string>("directionalModelInput");
+        c.Check(composed != model && composed.Contains("with-items-"), "the model with its accessories did not replace the model");
+
+        // previews and renders use it; fitting again starts from the model, not the composed GLB
+        p.Click("Preview (free)");
+        c.Require(p.RunUntilIdle(20), "preview never finished");
+        c.Check((string)LastBody(c, "/assets/sprite/directional-preview")?["model"] == composed, "the preview did not use the model with its accessories");
+        p.Set("accessoryItemInput", FakeFile(c, "helmet.glb"));
+        p.Click("Fit the Item (free)");
+        c.Require(p.RunUntilIdle(20), "third fit never finished");
+        c.Check((string)LastBody(c, "/assets/sprite/directional-accessory-fit")?["model"] == model, "a fit went onto the composed GLB (items would stack)");
+        p.Click("Back to the Model Without Them");
+        c.Check(p.Get<string>("directionalModelInput") == model, "'Back to the Model Without Them' did not restore the model");
+        p.Click("Remove");
+        c.Check(PluginDriver.Count(p.Get("directionalAccessories")) == 1, "'Remove' did not take the item off the list");
+        c.CheckClean(p);
+
+        // a model with no skeleton: the API's message is shown
+        var q = DirectionalPlugin(c, new FakeLudoApi.Behavior { AccessoryStatus = 400 });
+        q.Set("directionalModelInput", FakeFile(c, "static.glb"));
+        q.Set("directionalShowAccessories", true);
+        q.Set("accessoryItemInput", FakeFile(c, "sword.glb"));
+        q.Click("Fit the Item (free)");
+        c.Require(q.RunUntilIdle(20), "stuck after a failed fit");
+        c.Check(q.ErrorDialogs.Any(d => d.Message.Contains("Rig it first")), $"fit failure not shown; dialogs: {string.Join(" / ", q.Dialogs)}");
+        c.Check(q.Get("accessoryFit") == null, "a failed fit left a result");
+    }
+
     // ---------------------------------------------------------------- Upscale Image
 
     static void Upscale(Ctx c)
@@ -1518,6 +1597,7 @@ public static class Scenarios
         new("generate", "3D: starting image from a description or a redraw, then the model", StartingImage),
         new("generate", "directional sprites: styles, preset, preview, sheets, stills, saves", Directional),
         new("generate", "directional sprites: animation sources and hand-offs", DirectionalSources),
+        new("generate", "directional sprites: accessories fit, adjust, attach, render with them", DirectionalAccessories),
         new("generate", "my animations: generate, pick, mirror on directional sprites", MyAnimationsDirectional),
         new("generate", "my animations: animation clips and my animations on animate 3D", AnimationClips3D),
         new("generate", "my animations: animate sprite from a clip or my animation", AnimateSpriteFromClip),

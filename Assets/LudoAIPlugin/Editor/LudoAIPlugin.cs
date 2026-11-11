@@ -1348,6 +1348,9 @@ public class LudoAIPlugin : EditorWindow
 
         GUILayout.Space(10);
 
+        // ---- accessories
+        DrawDirectionalAccessories();
+
         // ---- animation
         int sourceIndex = Array.IndexOf(directionalAnimationSourceOptions, directionalAnimationSource);
         if (sourceIndex < 0) sourceIndex = 0;
@@ -2263,6 +2266,407 @@ public class LudoAIPlugin : EditorWindow
             EditorUtility.DisplayDialog("Directional Sprites Error", statusMessage, "OK");
         }
         isProcessing = false;
+    }
+
+    // ============================
+    // ======= ACCESSORIES ========
+    // ============================
+    // Directional Sprites' Accessories step, as in the web app (3D Model, Accessories, Style,
+    // Sprites): give the rigged model a sword, a shield, a helmet... Ludo fits each item
+    // automatically for what it is (fitDirectionalAccessory, free, a few seconds with previews);
+    // the fit is adjusted with numbers relative to that automatic fit, since there is no 3D
+    // viewport here, and checked on the previews Ludo renders. Put Accessories on the Model
+    // (attachDirectionalAccessories, free) then builds one GLB holding every item, which
+    // becomes the model the previews and renders use.
+
+    private readonly string[] accessoryKindOptions = { "auto", "blade", "gun", "staff", "bow", "shield", "helmet", "hat", "back", "other" };
+    private readonly string[] accessoryKindLabels = { "Guess from the name and shape", "Sword or axe", "Gun", "Staff or spear", "Bow", "Shield", "Helmet", "Hat or crown", "Backpack", "Other" };
+    private readonly string[] accessoryPointOptions = { "auto", "right_hand", "left_hand", "head", "back", "hips" };
+    private readonly string[] accessoryPointLabels = { "Where its kind goes", "Right hand", "Left hand", "Head", "Back", "Hips" };
+
+    private bool directionalShowAccessories = false;
+    private string accessoryItemInput = "";
+    private string accessoryName = "";
+    private string accessoryKind = "auto";
+    private string accessoryPoint = "auto";
+    private string accessoryBone = "";
+    private float accessorySize = 100f;
+    private float accessoryMoveForward, accessoryMoveUp, accessoryMoveOut;
+    private float accessoryTurnForward, accessoryTurnUp, accessoryTurnOut;
+    private bool accessoryFlip = false;
+    private bool accessoryGrip = true;
+    private AccessoryFitResult accessoryFit = null;
+    private string accessoryFitSignature = null; // the settings the shown fit was made with
+    private Dictionary<string, List<Texture2D>> accessoryPreviewFrames = new Dictionary<string, List<Texture2D>>();
+    private List<AccessoryEntry> directionalAccessories = new List<AccessoryEntry>();
+    // The model the accessories go on, and the GLB holding them that replaced it in the field.
+    private string accessoryBaseModel = "";
+    private string accessoryComposedModel = "";
+
+    public class AccessoryEntry
+    {
+        public string Item;
+        public string Name;
+        public Dictionary<string, object> Adjustments; // kind/point/bone/size/move/turn/flip/grip, as sent to the fit
+        public JToken Placement;                       // the fit's placement, when it matches the adjustments
+        public string Summary;
+    }
+
+    // The model to fit and attach to: the one in the field, or, while the field holds the GLB
+    // this step built, the model it was built on (the items are put on again, not stacked).
+    private string AccessoryBaseModel()
+    {
+        if (!string.IsNullOrEmpty(accessoryComposedModel) && directionalModelInput == accessoryComposedModel) return accessoryBaseModel;
+        return directionalModelInput;
+    }
+
+    private Dictionary<string, object> AccessoryAdjustments()
+    {
+        var a = new Dictionary<string, object>();
+        if (accessoryKind != "auto") a["kind"] = accessoryKind;
+        if (!string.IsNullOrWhiteSpace(accessoryBone)) a["bone"] = accessoryBone.Trim();
+        else if (accessoryPoint != "auto") a["point"] = accessoryPoint;
+        if (Math.Abs(accessorySize - 100f) > 0.01f) a["size"] = accessorySize;
+        if (accessoryMoveForward != 0 || accessoryMoveUp != 0 || accessoryMoveOut != 0)
+            a["move"] = new Dictionary<string, object> { ["forward"] = accessoryMoveForward, ["up"] = accessoryMoveUp, ["out"] = accessoryMoveOut };
+        if (accessoryTurnForward != 0 || accessoryTurnUp != 0 || accessoryTurnOut != 0)
+            a["turn"] = new Dictionary<string, object> { ["forward"] = accessoryTurnForward, ["up"] = accessoryTurnUp, ["out"] = accessoryTurnOut };
+        if (accessoryFlip) a["flip"] = true;
+        if (!accessoryGrip) a["grip"] = false;
+        return a;
+    }
+
+    private string AccessorySignature()
+    {
+        return AccessoryBaseModel() + "|" + accessoryItemInput + "|" + accessoryName + "|" + JsonConvert.SerializeObject(AccessoryAdjustments());
+    }
+
+    private void DrawDirectionalAccessories()
+    {
+        directionalShowAccessories = EditorGUILayout.Toggle("Add Weapons & Accessories", directionalShowAccessories);
+        if (!directionalShowAccessories) return;
+
+        GUILayout.BeginVertical("box");
+        GUILayout.Label("Accessories", EditorStyles.boldLabel);
+        GUILayout.Label("Give it a sword, a shield or a helmet: add a 3D model of the item (a GLB). Ludo reads what it is and fits it for you: a sword in the hand, a shield on the arm, a helmet over the head. Adjust it if you like, and it is drawn with your character in every view and animation. Free.", EditorStyles.helpBox);
+
+        // items already added
+        for (int i = 0; i < directionalAccessories.Count; i++)
+        {
+            GUILayout.BeginHorizontal();
+            GUILayout.Label($"{i + 1}. {directionalAccessories[i].Summary}", EditorStyles.miniLabel);
+            if (GUILayout.Button("Remove", GUILayout.Width(70)))
+            {
+                directionalAccessories.RemoveAt(i);
+                GUILayout.EndHorizontal();
+                break;
+            }
+            GUILayout.EndHorizontal();
+        }
+
+        GUILayout.Label(directionalAccessories.Count == 0 ? "Add a Weapon or Accessory" : "Add Another Item", EditorStyles.boldLabel);
+        GUILayout.BeginHorizontal();
+        GUILayout.Label("Item GLB URL or Base64:");
+        if (GUILayout.Button("Select Item GLB", GUILayout.Width(130)))
+        {
+            string loaded = LoadGlbFromProjectAsDataUri();
+            if (!string.IsNullOrEmpty(loaded)) accessoryItemInput = loaded;
+        }
+        if (current3DModel != null && !string.IsNullOrEmpty(current3DModel.ModelUrl) && !current3DModel.Rigged && GUILayout.Button("Use Created Model", GUILayout.Width(140)))
+        {
+            accessoryItemInput = current3DModel.ModelUrl;
+        }
+        GUILayout.EndHorizontal();
+        accessoryItemInput = EditorGUILayout.TextField(accessoryItemInput);
+        GUILayout.Label("Any 3D model of the item, standing as it was made (Create 3D without rigging).", EditorStyles.helpBox);
+
+        accessoryName = EditorGUILayout.TextField("Name (e.g. rusty sword):", accessoryName);
+        if (accessoryName.Length > 120) accessoryName = accessoryName.Substring(0, 120);
+        int kindIndex = Array.IndexOf(accessoryKindOptions, accessoryKind);
+        if (kindIndex < 0) kindIndex = 0;
+        kindIndex = EditorGUILayout.Popup("What it is:", kindIndex, accessoryKindLabels);
+        accessoryKind = accessoryKindOptions[kindIndex];
+        int pointIndex = Array.IndexOf(accessoryPointOptions, accessoryPoint);
+        if (pointIndex < 0) pointIndex = 0;
+        pointIndex = EditorGUILayout.Popup("Held by:", pointIndex, accessoryPointLabels);
+        accessoryPoint = accessoryPointOptions[pointIndex];
+        accessoryBone = EditorGUILayout.TextField("Any bone (name, optional):", accessoryBone);
+        if (accessoryFit != null && accessoryFit.Points != null && accessoryFit.Points.Count > 0)
+        {
+            GUILayout.Label("This skeleton: " + string.Join(", ", accessoryFit.Points.ConvertAll(pt => $"{pt.Point} = {pt.Bone}").ToArray()), EditorStyles.miniLabel);
+        }
+
+        GUILayout.Label("Adjust the fit (from the automatic fit):", EditorStyles.boldLabel);
+        accessorySize = EditorGUILayout.Slider("Size (%):", accessorySize, 10f, 300f);
+        accessoryMoveForward = EditorGUILayout.Slider("Move Forward (%):", accessoryMoveForward, -50f, 50f);
+        accessoryMoveUp = EditorGUILayout.Slider("Move Up (%):", accessoryMoveUp, -50f, 50f);
+        accessoryMoveOut = EditorGUILayout.Slider("Move Out (%):", accessoryMoveOut, -50f, 50f);
+        accessoryTurnForward = EditorGUILayout.Slider("Turn about Forward (deg):", accessoryTurnForward, -180f, 180f);
+        accessoryTurnUp = EditorGUILayout.Slider("Turn about Up (deg):", accessoryTurnUp, -180f, 180f);
+        accessoryTurnOut = EditorGUILayout.Slider("Turn about Out (deg):", accessoryTurnOut, -180f, 180f);
+        accessoryFlip = EditorGUILayout.Toggle("End for End", accessoryFlip);
+        accessoryGrip = EditorGUILayout.Toggle("Close the Hand", accessoryGrip);
+        GUILayout.Label("Move is in % of the character's height, turns in degrees. End for End holds the item by its other end, when the fit grabbed the wrong one. Each fit starts from the automatic fit.", EditorStyles.helpBox);
+
+        bool canFit = !isProcessing && !string.IsNullOrEmpty(AccessoryBaseModel()) && !string.IsNullOrEmpty(accessoryItemInput);
+        GUILayout.BeginHorizontal();
+        GUI.enabled = canFit;
+        if (GUILayout.Button("Fit the Item (free)", GUILayout.Height(26)))
+        {
+            isProcessing = true;
+            statusMessage = "Fitting the item...";
+            EditorCoroutineUtility.StartCoroutineOwnerless(FitAccessory());
+        }
+        GUI.enabled = canFit && directionalAccessories.Count < 8;
+        if (GUILayout.Button("Add to the List", GUILayout.Height(26)))
+        {
+            AddAccessory();
+        }
+        GUI.enabled = true;
+        GUILayout.EndHorizontal();
+
+        DrawAccessoryFit();
+
+        GUILayout.Space(5);
+        GUI.enabled = !isProcessing && directionalAccessories.Count > 0 && !string.IsNullOrEmpty(AccessoryBaseModel());
+        if (GUILayout.Button($"Put Accessories on the Model (free)", GUILayout.Height(28)))
+        {
+            isProcessing = true;
+            statusMessage = "Putting the accessories on the model...";
+            EditorCoroutineUtility.StartCoroutineOwnerless(AttachAccessories());
+        }
+        GUI.enabled = true;
+        if (!string.IsNullOrEmpty(accessoryComposedModel) && directionalModelInput == accessoryComposedModel)
+        {
+            GUILayout.Label("The model field holds the model with its accessories (kept 7 days). Previews and renders use it.", EditorStyles.helpBox);
+            if (GUILayout.Button("Back to the Model Without Them", GUILayout.Width(220)))
+            {
+                directionalModelInput = accessoryBaseModel;
+            }
+        }
+        GUILayout.EndVertical();
+        GUILayout.Space(5);
+    }
+
+    private void DrawAccessoryFit()
+    {
+        if (accessoryFit == null) return;
+        bool current = accessoryFitSignature == AccessorySignature();
+        GUILayout.Label(current ? "Fit:" : "Fit (settings changed since: fit again to see them):", EditorStyles.boldLabel);
+        string held = !string.IsNullOrEmpty(accessoryFit.Point) ? accessoryFit.Point : accessoryFit.Bone;
+        GUILayout.Label($"Fitted as {accessoryFit.Kind}, held by {held}" + (accessoryFit.Bone != null && accessoryFit.Bone != held ? $" ({accessoryFit.Bone})" : ""), EditorStyles.miniLabel);
+        if (accessoryFit.Checks != null)
+        {
+            var c = accessoryFit.Checks;
+            var parts = new List<string>();
+            if (c.Sink.HasValue) parts.Add($"sinks {c.Sink.Value:0.#}% into the body");
+            if (c.GripGap.HasValue) parts.Add($"grip {c.GripGap.Value:0.#}% from the palm");
+            if (c.Through.HasValue) parts.Add($"{c.Through.Value:0.#}% of the head pokes through");
+            if (parts.Count > 0) GUILayout.Label("Checks: " + string.Join(", ", parts.ToArray()) + ". Near 0 is right.", EditorStyles.helpBox);
+        }
+        if (!string.IsNullOrEmpty(accessoryFit.PreviewError))
+        {
+            GUILayout.Label("No previews: " + accessoryFit.PreviewError, EditorStyles.helpBox);
+        }
+        if (accessoryFit.Previews == null || accessoryFit.Previews.Count == 0) return;
+        GUILayout.BeginHorizontal();
+        bool playing = false;
+        foreach (var preview in accessoryFit.Previews)
+        {
+            GUILayout.BeginVertical("box", GUILayout.Width(140));
+            GUILayout.Label(preview.Direction, EditorStyles.miniLabel);
+            List<Texture2D> frames;
+            if (accessoryPreviewFrames.TryGetValue(preview.Direction ?? "", out frames) && frames.Count > 0 && frames.TrueForAll(t => t != null))
+            {
+                float fps = preview.Fps > 0 ? preview.Fps : 8f;
+                int frame = frames.Count == 1 ? 0 : (int)(EditorApplication.timeSinceStartup * fps) % frames.Count;
+                GUILayout.Label(frames[Mathf.Clamp(frame, 0, frames.Count - 1)], GUILayout.Width(128), GUILayout.Height(128));
+                playing |= frames.Count > 1;
+            }
+            else
+            {
+                GUILayout.Label("Loading...", GUILayout.Width(128), GUILayout.Height(128));
+            }
+            GUILayout.EndVertical();
+        }
+        GUILayout.EndHorizontal();
+        GUILayout.Label("The model walking with the item, isometric from SW and SE.", EditorStyles.helpBox);
+        if (playing) Repaint();
+    }
+
+    private void AddAccessory()
+    {
+        var entry = new AccessoryEntry
+        {
+            Item = accessoryItemInput,
+            Name = string.IsNullOrWhiteSpace(accessoryName) ? null : accessoryName.Trim(),
+            Adjustments = AccessoryAdjustments()
+        };
+        // A fit made with exactly these settings gives the placement; otherwise Ludo
+        // places the item from the same adjustments, as the fit would.
+        if (accessoryFit != null && accessoryFitSignature == AccessorySignature() && accessoryFit.Placement != null)
+        {
+            entry.Placement = accessoryFit.Placement;
+        }
+        string what = entry.Name ?? (accessoryKind != "auto" ? accessoryKindLabels[Array.IndexOf(accessoryKindOptions, accessoryKind)] : "Item");
+        string where = accessoryFit != null && entry.Placement != null && !string.IsNullOrEmpty(accessoryFit.Point) ? accessoryFit.Point : (accessoryPoint != "auto" ? accessoryPoint : "its kind's place");
+        entry.Summary = $"{what}, {where}{(entry.Placement != null ? ", as fitted" : "")}";
+        directionalAccessories.Add(entry);
+        accessoryItemInput = "";
+        accessoryName = "";
+        accessoryFit = null;
+        accessoryFitSignature = null;
+        ClearAccessoryPreviewFrames();
+        statusMessage = $"{what} added. Put Accessories on the Model when the list is ready.";
+    }
+
+    private void ClearAccessoryPreviewFrames()
+    {
+        foreach (var frames in accessoryPreviewFrames.Values)
+            foreach (var texture in frames)
+                if (texture != null) UnityEngine.Object.DestroyImmediate(texture);
+        accessoryPreviewFrames.Clear();
+    }
+
+    private IEnumerator FitAccessory()
+    {
+        string signature = AccessorySignature();
+        var payload = AccessoryAdjustments();
+        payload["model"] = AccessoryBaseModel();
+        payload["item"] = accessoryItemInput;
+        if (!string.IsNullOrWhiteSpace(accessoryName)) payload["name"] = accessoryName.Trim();
+
+        var settings = new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore };
+        var result = new EditorHttpResult();
+        yield return SendJsonWithHttpClient(HttpMethod.Post, apiUrl + "/assets/sprite/directional-accessory-fit", JsonConvert.SerializeObject(payload, settings), 600, result);
+
+        if (!result.Success)
+        {
+            statusMessage = FormatEditorHttpError("fitting the item", result);
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog("Accessories Error", statusMessage, "OK");
+            isProcessing = false;
+            yield break;
+        }
+        try
+        {
+            accessoryFit = JsonConvert.DeserializeObject<AccessoryFitResult>(result.Body);
+            accessoryFitSignature = signature;
+            ClearAccessoryPreviewFrames();
+            if (accessoryFit != null && accessoryFit.Previews != null)
+            {
+                foreach (var preview in accessoryFit.Previews)
+                {
+                    var frames = new List<Texture2D>();
+                    accessoryPreviewFrames[preview.Direction ?? ""] = frames;
+                    if (preview.FrameUrls == null) continue;
+                    foreach (string url in preview.FrameUrls) frames.Add(null);
+                    for (int i = 0; i < preview.FrameUrls.Count; i++)
+                    {
+                        int slot = i;
+                        EditorCoroutineUtility.StartCoroutineOwnerless(LoadTexture(preview.FrameUrls[i], t => { if (slot < frames.Count) frames[slot] = t; }));
+                    }
+                }
+            }
+            statusMessage = accessoryFit != null ? $"Fitted as {accessoryFit.Kind}. Adjust and fit again, or add it to the list." : "The fit came back empty.";
+        }
+        catch (Exception e)
+        {
+            statusMessage = $"Error reading the fit: {e.Message}";
+            EditorUtility.DisplayDialog("Accessories Error", statusMessage, "OK");
+        }
+        isProcessing = false;
+    }
+
+    private IEnumerator AttachAccessories()
+    {
+        string baseModel = AccessoryBaseModel();
+        var items = new List<Dictionary<string, object>>();
+        foreach (var entry in directionalAccessories)
+        {
+            var item = new Dictionary<string, object> { ["item"] = entry.Item };
+            if (entry.Name != null) item["name"] = entry.Name;
+            if (entry.Placement != null) item["placement"] = entry.Placement;
+            else foreach (var pair in entry.Adjustments) item[pair.Key] = pair.Value;
+            items.Add(item);
+        }
+        var payload = new Dictionary<string, object> { ["model"] = baseModel, ["items"] = items };
+
+        var settings = new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore };
+        var result = new EditorHttpResult();
+        yield return SendJsonWithHttpClient(HttpMethod.Post, apiUrl + "/assets/sprite/directional-accessories", JsonConvert.SerializeObject(payload, settings), 600, result);
+
+        if (!result.Success)
+        {
+            statusMessage = FormatEditorHttpError("putting the accessories on the model", result);
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog("Accessories Error", statusMessage, "OK");
+            isProcessing = false;
+            yield break;
+        }
+        try
+        {
+            var made = JsonConvert.DeserializeObject<AccessoriesResult>(result.Body);
+            if (made != null && !string.IsNullOrEmpty(made.ModelUrl))
+            {
+                accessoryBaseModel = baseModel;
+                accessoryComposedModel = made.ModelUrl;
+                directionalModelInput = made.ModelUrl;
+                int kept = made.Kept != null ? made.Kept.Count : 0;
+                statusMessage = $"The model now holds {directionalAccessories.Count + kept} item(s){(kept > 0 ? $", {kept} of them saved on it before" : "")}{(made.Saved ? ", saved on your model" : "")}. Preview and render use it.";
+            }
+            else
+            {
+                statusMessage = "The model with its accessories came back empty.";
+                EditorUtility.DisplayDialog("Accessories Error", statusMessage, "OK");
+            }
+        }
+        catch (Exception e)
+        {
+            statusMessage = $"Error reading the model with its accessories: {e.Message}";
+            EditorUtility.DisplayDialog("Accessories Error", statusMessage, "OK");
+        }
+        isProcessing = false;
+    }
+
+    // POST /assets/sprite/directional-accessory-fit
+    [Serializable]
+    public class AccessoryFitResult
+    {
+        [JsonProperty("kind")] public string Kind { get; set; }
+        [JsonProperty("point")] public string Point { get; set; }
+        [JsonProperty("bone")] public string Bone { get; set; }
+        [JsonProperty("placement")] public JToken Placement { get; set; }
+        [JsonProperty("checks")] public AccessoryChecks Checks { get; set; }
+        [JsonProperty("points")] public List<AccessoryPoint> Points { get; set; }
+        [JsonProperty("model_url")] public string ModelUrl { get; set; }
+        [JsonProperty("previews")] public List<DirectionalPreview> Previews { get; set; }
+        [JsonProperty("preview_error")] public string PreviewError { get; set; }
+    }
+
+    [Serializable]
+    public class AccessoryChecks
+    {
+        [JsonProperty("sink")] public float? Sink { get; set; }
+        [JsonProperty("inside")] public float? Inside { get; set; }
+        [JsonProperty("grip_gap")] public float? GripGap { get; set; }
+        [JsonProperty("through")] public float? Through { get; set; }
+    }
+
+    [Serializable]
+    public class AccessoryPoint
+    {
+        [JsonProperty("point")] public string Point { get; set; }
+        [JsonProperty("bone")] public string Bone { get; set; }
+    }
+
+    // POST /assets/sprite/directional-accessories
+    [Serializable]
+    public class AccessoriesResult
+    {
+        [JsonProperty("model_url")] public string ModelUrl { get; set; }
+        [JsonProperty("saved")] public bool Saved { get; set; }
+        [JsonProperty("kept")] public List<AccessoryPoint> Kept { get; set; }
     }
 
     // ============================
