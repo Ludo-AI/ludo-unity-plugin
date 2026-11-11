@@ -13,6 +13,7 @@
 - **Mirror**: play an Animation Clip or one of My Animations on the other side, left and right swapped, in all three tools.
 - **Animate 3D** can retarget an Animation Clip or one of My Animations onto a rigged model (0.5 credits), as well as animate from a text prompt.
 - **Animate Sprite** can play an Animation Clip or one of My Animations on a sprite, seen from the camera view the sprite is drawn from, as well as animate from a text description.
+- **Create 3D: Generate Starting Image** (0.5 credits): describe a character, or pick an image to redraw as a 3D render, and the result is ready for **Create 3D Model**.
 - **Edit Image**: a new **Sprites & Images** subtab, and an **Edit** button on every generated image. **Edit Image** changes an image from a description (0.5 credits); **Edit with Mask** and **Erase with Mask** change or remove only the area a mask image marks (1 credit). Masks are images you pick from the project. **Convert to Pixel Art** (free) is there too, with the pixel size and number of colors you choose, and **Generate Normal Map** (free) for an image you already have.
 - **Normal maps** for 2D lighting: a **Normal Map** option on **Generate Sprite** (free), **Animate Sprite** (0.5 credits) and **Directional Sprites** (0.5 credits per sheet, free with stills). Saving the image or sheet saves its normal map next to it as `<name>_normal.png`.
 - **Use Pixel Grid** on **Animate Sprite**: turn it off when a detected pixel grid is wrong for your sprite.
@@ -302,6 +303,8 @@ Convert 2D concept art or sprites into 3D models, then rig and animate them for 
 The **3D Models** tab has four subtabs: **Create 3D**, **Rig Model**, **Animate 3D** and **Directional Sprites**. Flow works best as Create → Rig → Animate → Directional Sprites (or Create with **Also Rig the Model**, skipping the Rig step).
 
 ### Create 3D from Image
+
+**Generate Starting Image (optional, 0.5 credits)**: turn it on to get a character image ready to become a 3D model. Describe the character ("A knight in green armor, full body, standing"), or **Pick Starting Model Image** to have one of your own redrawn as a 3D render, with optional changes ("add a red cape and a sword"). The result goes into the image field for **Create 3D Model**; a redraw is a new picture each time, so generate again for another try. **Save Starting Image** keeps it.
 
 1. **Provide Image**: 
    - Enter image URL, or

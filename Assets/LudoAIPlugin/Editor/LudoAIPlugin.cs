@@ -135,6 +135,12 @@ public class LudoAIPlugin : EditorWindow
     private bool model3DRig = false;      // also rig it in the same call
     private string model3DCreateJointNaming = "mixamo";
     private Generated3DModel current3DModel = null;
+    // Starting image (POST /assets/3d-model/image, 0.5 credits): a character redrawn or made as a
+    // 3D render, ready for Create 3D. The web app's first Directional Sprites step.
+    private bool model3DShowStartImage = false;
+    private string model3DStartPrompt = "";
+    private string model3DStartReference = "";
+    private GeneratedImage model3DStartImage = null;
     private List<Texture2D> model3DSnapshotTextures = new List<Texture2D>();
     private Vector2 model3DScrollPosition;
 
@@ -639,6 +645,8 @@ public class LudoAIPlugin : EditorWindow
         GUILayout.Label("Create 3D Model from Image", EditorStyles.boldLabel);
         GUILayout.Space(5);
 
+        DrawStartingImage();
+
         // Option to select image from project
         GUILayout.BeginHorizontal();
         GUILayout.Label("Image URL or Base64:");
@@ -820,6 +828,124 @@ public class LudoAIPlugin : EditorWindow
 
             GUILayout.EndVertical();
         }
+    }
+
+    private void DrawStartingImage()
+    {
+        model3DShowStartImage = EditorGUILayout.Toggle("Generate Starting Image", model3DShowStartImage);
+        if (!model3DShowStartImage)
+        {
+            GUILayout.Space(5);
+            return;
+        }
+        GUILayout.BeginVertical("box");
+        GUILayout.Label("Describe a character, or pick an image of your own, and get a 3D render to make the model from. 0.5 credits per image.", EditorStyles.helpBox);
+        GUILayout.Label(string.IsNullOrEmpty(model3DStartReference)
+            ? "Description (e.g. \"A knight in green armor, full body, standing\"):"
+            : "Changes to make while redrawing it (optional, e.g. \"add a red cape and a sword\"):");
+        model3DStartPrompt = EditorGUILayout.TextField(model3DStartPrompt);
+        if (model3DStartPrompt.Length > 1000) model3DStartPrompt = model3DStartPrompt.Substring(0, 1000);
+
+        GUILayout.BeginHorizontal();
+        GUILayout.Label("Reference Image (optional):");
+        if (GUILayout.Button("Pick Starting Model Image", GUILayout.Width(180)))
+        {
+            string path = EditorUtility.OpenFilePanel("Select Starting Model Image", "Assets", "png,jpg,jpeg,webp");
+            if (!string.IsNullOrEmpty(path))
+            {
+                string dataUri = LoadImageFileAsDataUri(path);
+                if (!string.IsNullOrEmpty(dataUri)) model3DStartReference = dataUri;
+            }
+        }
+        GUILayout.EndHorizontal();
+        model3DStartReference = EditorGUILayout.TextField(model3DStartReference);
+        if (!string.IsNullOrEmpty(model3DStartReference))
+        {
+            GUILayout.Label("Reference image will be redrawn as a 3D render.", EditorStyles.helpBox);
+        }
+
+        GUI.enabled = !isProcessing && (!string.IsNullOrWhiteSpace(model3DStartPrompt) || !string.IsNullOrEmpty(model3DStartReference));
+        if (GUILayout.Button("Generate Starting Image (0.5 credits)", GUILayout.Height(26)))
+        {
+            isProcessing = true;
+            statusMessage = "Generating 3D Render...";
+            EditorCoroutineUtility.StartCoroutineOwnerless(Create3DModelImage());
+        }
+        GUI.enabled = true;
+
+        if (model3DStartImage != null && !string.IsNullOrEmpty(model3DStartImage.Url))
+        {
+            GUILayout.BeginHorizontal();
+            Texture2D start = RemoteTexture(model3DStartImage.Url);
+            if (start != null) GUILayout.Label(start, GUILayout.Width(96), GUILayout.Height(96));
+            GUILayout.BeginVertical();
+            GUILayout.Label("Starting image", EditorStyles.miniLabel);
+            if (GUILayout.Button("Use as the Image Below", GUILayout.Height(24)))
+            {
+                model3DImageUrl = model3DStartImage.Url;
+            }
+            if (GUILayout.Button("Save Starting Image", GUILayout.Height(24)))
+            {
+                SaveImageToFile(model3DStartImage);
+            }
+            GUILayout.EndVertical();
+            GUILayout.EndHorizontal();
+            GUILayout.Label("A redraw is a new picture each time: generate again for another try.", EditorStyles.helpBox);
+        }
+        GUILayout.EndVertical();
+        GUILayout.Space(5);
+    }
+
+    private IEnumerator Create3DModelImage()
+    {
+        var payload = new Dictionary<string, object>();
+        if (!string.IsNullOrWhiteSpace(model3DStartPrompt)) payload["prompt"] = model3DStartPrompt.Trim();
+        if (!string.IsNullOrEmpty(model3DStartReference))
+        {
+            string reference = NormalizeImageInputForApi(model3DStartReference);
+            if (string.IsNullOrEmpty(reference))
+            {
+                statusMessage = "Failed to prepare the reference image.";
+                EditorUtility.DisplayDialog("Starting Image Error", statusMessage, "OK");
+                isProcessing = false;
+                yield break;
+            }
+            payload["image"] = reference;
+        }
+
+        var job = new EditorHttpResult();
+        yield return RunApiJob("/assets/3d-model/image", payload, "Generating 3D Render", job);
+
+        if (!job.Success)
+        {
+            statusMessage = FormatEditorHttpError("generating the starting image", job);
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog("Starting Image Error", statusMessage, "OK");
+            isProcessing = false;
+            yield break;
+        }
+        try
+        {
+            // One image result, not an array.
+            var image = JsonConvert.DeserializeObject<GeneratedImage>(job.Body);
+            if (image != null && !string.IsNullOrEmpty(image.Url))
+            {
+                model3DStartImage = image;
+                model3DImageUrl = image.Url;
+                statusMessage = "Starting image ready, and in the image field: Create 3D Model makes the model from it.";
+            }
+            else
+            {
+                statusMessage = "The starting image came back empty.";
+                EditorUtility.DisplayDialog("Starting Image Error", statusMessage, "OK");
+            }
+        }
+        catch (Exception e)
+        {
+            statusMessage = $"Error reading the starting image: {e.Message}";
+            EditorUtility.DisplayDialog("Starting Image Error", statusMessage, "OK");
+        }
+        isProcessing = false;
     }
 
     private void DrawRig3DModelUI()

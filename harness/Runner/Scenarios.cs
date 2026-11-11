@@ -1082,6 +1082,50 @@ public static class Scenarios
         c.Check(q.Get("currentNormalMap") == null, "a failed map left a result");
     }
 
+    // ---------------------------------------------------------------- Create 3D: starting image
+
+    static void StartingImage(Ctx c)
+    {
+        var p = c.NewPlugin(new FakeLudoApi.Behavior { PollsUntilDone = 1, PollAfterMs = 1 });
+        Tab(p, "Models", "currentModelTab", "Create");
+        c.Check(!ButtonShown(p, "Generate Starting Image (0.5 credits)"), "the starting image section is open before it is asked for");
+        p.Set("model3DShowStartImage", true);
+        c.Check(!ButtonEnabled(p, "Generate Starting Image (0.5 credits)"), "can generate with neither a description nor an image");
+        // from a description
+        p.Set("model3DStartPrompt", "a knight in green armour, full body, standing");
+        p.Click("Generate Starting Image (0.5 credits)");
+        c.Require(p.RunUntilIdle(20), "starting image never finished: " + p.Status);
+        var body = LastBody(c, "/assets/3d-model/image");
+        c.Check((string)body?["prompt"] == "a knight in green armour, full body, standing" && body?["image"] == null, $"description-only body ({body})");
+        string url = (string)PluginDriver.Prop(p.Get("model3DStartImage"), "Url");
+        c.Require(!string.IsNullOrEmpty(url), "no starting image");
+        c.Check(p.Get<string>("model3DImageUrl") == url, "the starting image did not go into the image field");
+        ClickSave(c, p, "Save Starting Image", "image");
+        // and on to the model
+        p.Click("Create 3D Model");
+        c.Require(p.RunUntilIdle(20), "3D creation never finished");
+        c.Check((string)LastBody(c, "/assets/3d-model")?["image"] == url, "Create 3D did not use the starting image");
+
+        // a redraw of a project image, with changes
+        string file = Path.Combine(c.OutDir, "concept.png");
+        File.WriteAllBytes(file, UnityEngine.FakeImage.Png(800, 800));
+        Harness.OpenFilePanel = (title, ext) => title.Contains("Starting") ? file : "";
+        p.Set("model3DStartPrompt", "add a red cape");
+        p.Click("Pick Starting Model Image");
+        p.Click("Generate Starting Image (0.5 credits)");
+        c.Require(p.RunUntilIdle(20), "redraw never finished");
+        body = LastBody(c, "/assets/3d-model/image");
+        c.Check(((string)body?["image"] ?? "").StartsWith("data:image/") && (string)body?["prompt"] == "add a red cape", $"redraw body (image {((string)body?["image"])?.Substring(0, 20)}, prompt {body?["prompt"]})");
+        c.CheckClean(p);
+
+        // the API's own check: neither prompt nor image is a 400 (the button prevents it)
+        using var http = new HttpClient();
+        var req = new HttpRequestMessage(HttpMethod.Post, c.ApiUrl + "/assets/3d-model/image") { Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json") };
+        req.Headers.TryAddWithoutValidation("Authorization", "ApiKey " + c.ApiKey);
+        req.Headers.TryAddWithoutValidation("x-ludo-tool", "unity");
+        c.Check((int)http.Send(req).StatusCode == 400, "fake: an empty starting image request is not a 400");
+    }
+
     // ---------------------------------------------------------------- Upscale Image
 
     static void Upscale(Ctx c)
@@ -1471,6 +1515,7 @@ public static class Scenarios
         new("generate", "3D: optional back view (URL, from project, clear)", Model3DBackView),
         new("live", "3D: back view accepted by the live API", Model3DBackViewLive, LiveToo: true),
         new("generate", "3D: prop/hero model choice, rig on create", Model3DHeroRig),
+        new("generate", "3D: starting image from a description or a redraw, then the model", StartingImage),
         new("generate", "directional sprites: styles, preset, preview, sheets, stills, saves", Directional),
         new("generate", "directional sprites: animation sources and hand-offs", DirectionalSources),
         new("generate", "my animations: generate, pick, mirror on directional sprites", MyAnimationsDirectional),

@@ -63,7 +63,7 @@ public class FakeLudoApi : IDisposable
         "/audio/speech", "/audio/speech-preset",
         "/assets/sprite/directional", "/assets/sprite/directional-stills", "/assets/image/upscale",
         "/assets/animation", "/assets/3d-model/animate-preset", "/assets/sprite/transfer-motion",
-        "/assets/image/edit", "/assets/image/normal-map",
+        "/assets/image/edit", "/assets/image/normal-map", "/assets/3d-model/image",
     };
 
     // Free synchronous POSTs: validated like the rest, answered at once, never a job.
@@ -324,6 +324,10 @@ public class FakeLudoApi : IDisposable
                 if (has("preset_id") && has("animation_id")) return (400, "Provide only one of: preset_id, animation_id");
                 if (!byView && mirror) return (400, "'mirror' needs a 'preset_id' or an 'animation_id'");
                 break;
+            case "/assets/3d-model/image":
+                // MediaGeneration.assert3DModelImageInput: a prompt, an image, or both.
+                if (string.IsNullOrWhiteSpace((string)body["prompt"]) && !has("image")) return (400, "Provide a 'prompt', an 'image', or both");
+                return null;
             case "/assets/image/edit":
                 // editImage's prepare: mask_mode needs a mask, a prompt unless erasing,
                 // no reference when erasing, and a mask the size of the image.
@@ -611,6 +615,8 @@ public class FakeLudoApi : IDisposable
                     stills.Add(still);
                 }
                 return new JsonObject { ["images"] = stills };
+            case "/assets/3d-model/image":
+                return new JsonObject { ["url"] = F($"{job.Id}-render3d.webp"), ["request_id"] = (string)b["request_id"], ["created_at"] = now };
             case "/assets/image/normal-map":
                 return new JsonObject { ["url"] = (string)b["image"] is string src && src.StartsWith("http") ? src : F($"{job.Id}-source.png"), ["normal_map_url"] = F($"{job.Id}-normal.webp") };
             case "/assets/image/upscale":
