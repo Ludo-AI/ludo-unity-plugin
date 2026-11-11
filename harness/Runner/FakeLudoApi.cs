@@ -30,6 +30,8 @@ public class FakeLudoApi : IDisposable
         public int LoseSubmitResponses;         // next N submits: job IS created, response lost as a 502
         public bool PreviewSuperseded;          // the Directional Sprites preview answers 204 (a newer one won)
         public int StylesStatus = 200;          // status for GET directional-styles
+        public int AnimationsStatus = 200;      // status for GET /assets/animations (My Animations)
+        public List<JsonObject> MyAnimations;   // the account's animations at the start (newest first)
     }
 
     public class Request
@@ -51,6 +53,7 @@ public class FakeLudoApi : IDisposable
         public double LastAnswerAt;
         public int LastPollAfterMs;
         public bool LastWas429;
+        public JsonArray Made;  // createAnimation: the animations this job made
     }
 
     static readonly string[] GenerationPaths =
@@ -59,6 +62,7 @@ public class FakeLudoApi : IDisposable
         "/assets/3d-model/animate", "/audio/sound-effect", "/audio/music", "/audio/voice",
         "/audio/speech", "/audio/speech-preset",
         "/assets/sprite/directional", "/assets/sprite/directional-stills", "/assets/image/upscale",
+        "/assets/animation", "/assets/3d-model/animate-preset", "/assets/sprite/transfer-motion",
     };
 
     // Free synchronous POSTs: validated like the rest, answered at once, never a job.
@@ -80,6 +84,10 @@ public class FakeLudoApi : IDisposable
     public Behavior B = new();
     public readonly List<Request> Requests = new();
     public readonly List<string> Violations = new();   // client broke the contract
+    // The account's own animations (Motion documents), newest first, as listMyAnimations
+    // answers them; createAnimation adds to it when its job succeeds.
+    public readonly List<JsonObject> Animations = new();
+    int nextAnimation;
     public string BaseUrl { get; }                      // what the plugin's apiUrl is set to
     public string Root { get; }
 
@@ -100,6 +108,11 @@ public class FakeLudoApi : IDisposable
         lock (Requests) Requests.Clear();
         lock (Violations) Violations.Clear();
         jobs.Clear();
+        lock (Animations)
+        {
+            Animations.Clear();
+            if (B.MyAnimations != null) Animations.AddRange(B.MyAnimations.Select(a => a.DeepClone().AsObject()));
+        }
         pollCount = 0;
         gatewayErrors = 0;
         lostResponses = 0;
@@ -181,6 +194,18 @@ public class FakeLudoApi : IDisposable
                 return;
             }
 
+            if (req.HttpMethod == "GET" && api == "/assets/animations")
+            {
+                if (B.AnimationsStatus != 200) { await Json(ctx, rec, B.AnimationsStatus, new JsonObject { ["message"] = "My Animations are unavailable" }); return; }
+                var q = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
+                int limit = int.TryParse(q["limit"], out var l) ? l : 50;
+                if (limit < 1 || limit > 200) { await Json(ctx, rec, 400, new JsonObject { ["message"] = "limit must be 1 to 200" }); return; }
+                var list = new JsonArray();
+                lock (Animations) foreach (var a in Animations.Take(limit)) list.Add(a.DeepClone());
+                await Json(ctx, rec, 200, new JsonObject { ["animations"] = list });
+                return;
+            }
+
             if (req.HttpMethod == "POST" && SyncPaths.Contains(api))
             {
                 string text = await new StreamReader(req.InputStream, Encoding.UTF8).ReadToEndAsync();
@@ -190,6 +215,8 @@ public class FakeLudoApi : IDisposable
                 CheckStyleParams(body, findings);
                 rec.Findings = findings;
                 if (!findings.Ok) { await Json(ctx, rec, 400, new JsonObject { ["message"] = "Request validation failed: " + string.Join("; ", findings.Errors) }); return; }
+                var rule = AnimationRules(api, body);
+                if (rule != null) { findings.Errors.Add(rule.Value.message); await Json(ctx, rec, rule.Value.status, new JsonObject { ["message"] = rule.Value.message }); return; }
                 if (body.ContainsKey("request_id")) lock (Violations) Violations.Add($"POST {api} sends request_id: the preview is not a job");
                 if (B.PreviewSuperseded) { rec.Status = 204; ctx.Response.StatusCode = 204; ctx.Response.Close(); return; }
                 var previews = new JsonArray();
@@ -255,6 +282,47 @@ public class FakeLudoApi : IDisposable
         }
     }
 
+    // What the public handlers check beyond the schema (prometheus-server master,
+    // src/api/controllers/public-api.js): one animation at most, a mirror only on an
+    // Animation Clip (preset_id) or an account animation (animation_id), and an
+    // animation_id that is the account's own (404 otherwise). Checked before a job exists.
+    (int status, string message)? AnimationRules(string api, JsonObject body)
+    {
+        bool has(string k) => body[k] is JsonValue v && !(v.GetValueKind() == System.Text.Json.JsonValueKind.String && (string)v == "");
+        bool mirror = body["mirror"]?.GetValueKind() == System.Text.Json.JsonValueKind.True;
+        switch (api)
+        {
+            case "/assets/sprite/directional":
+            case "/assets/sprite/directional-preview":
+                var sources = new[] { "animation_url", "preset_id", "animation_id", "model_animation" }.Where(has).ToList();
+                if (sources.Count > 1) return (400, "Provide at most one animation: " + string.Join(", ", sources));
+                if (mirror && !has("preset_id") && !has("animation_id")) return (400, "'mirror' needs a 'preset_id' or an 'animation_id'");
+                break;
+            case "/assets/3d-model/animate-preset":
+                if (has("preset_id") == has("animation_id")) return (400, "Provide either 'preset_id' or 'animation_id'");
+                break;
+            case "/assets/sprite/transfer-motion":
+                bool byView = has("preset_id") || has("animation_id");
+                if (!has("video") && !(byView && has("perspective") && has("direction")))
+                    return (400, "Either 'video', or 'preset_id' or 'animation_id' with 'perspective' and 'direction', must be provided");
+                if (has("preset_id") && has("animation_id")) return (400, "Provide only one of: preset_id, animation_id");
+                if (!byView && mirror) return (400, "'mirror' needs a 'preset_id' or an 'animation_id'");
+                break;
+            case "/assets/animation":
+                if (body["augment_prompt"]?.GetValueKind() == System.Text.Json.JsonValueKind.False && !has("duration"))
+                    return (400, "'duration' is required when 'augment_prompt' is false");
+                return null;
+            default:
+                return null;
+        }
+        if (has("animation_id"))
+        {
+            string id = (string)body["animation_id"];
+            lock (Animations) if (!Animations.Any(a => (string)a["id"] == id)) return (404, "Animation not found");
+        }
+        return null;
+    }
+
     async Task Submit(HttpListenerContext ctx, Request rec, string api, JsonObject body)
     {
         var findings = contract.Validate("POST", api, body);
@@ -263,6 +331,13 @@ public class FakeLudoApi : IDisposable
         if (!findings.Ok)
         {
             await Json(ctx, rec, 400, new JsonObject { ["message"] = "Request validation failed: " + string.Join("; ", findings.Errors) });
+            return;
+        }
+        var rule = AnimationRules(api, body);
+        if (rule != null)
+        {
+            findings.Errors.Add(rule.Value.message);
+            await Json(ctx, rec, rule.Value.status, new JsonObject { ["message"] = rule.Value.message });
             return;
         }
         if (gatewayErrors < B.SubmitGatewayErrors)
@@ -410,7 +485,37 @@ public class FakeLudoApi : IDisposable
                 var arr = new JsonArray();
                 for (int i = 0; i < n; i++) arr.Add(new JsonObject { ["url"] = F($"{job.Id}-{i}.webp"), ["request_id"] = null, ["created_at"] = now });
                 return arr;
+            case "/assets/animation":
+                // Made once per job (polls re-project the result), then on the account's list.
+                if (job.Made == null)
+                {
+                    int count = b["num_variants"] == null ? 1 : (int)b["num_variants"]!.GetValue<double>();
+                    job.Made = new JsonArray();
+                    for (int i = 0; i < count; i++)
+                    {
+                        string id = "6a1f" + Interlocked.Increment(ref nextAnimation).ToString("D20");
+                        job.Made.Add(new JsonObject
+                        {
+                            ["id"] = id, ["name"] = "generated-move-" + id.Substring(id.Length - 3), ["prompt"] = (string)b["prompt"],
+                            ["caption"] = "A person " + (string)b["prompt"], ["seed"] = 7 + i, ["duration"] = 2.5, ["fps"] = 30, ["loop"] = false,
+                            ["preview_url"] = F($"{id}-preview.mp4"), ["created_at"] = now,
+                        });
+                    }
+                    lock (Animations) Animations.InsertRange(0, job.Made.Select(a => a!.DeepClone().AsObject()));
+                }
+                return new JsonObject { ["animations"] = job.Made.DeepClone() };
+            case "/assets/3d-model/animate-preset":
+                var retargeted = new JsonObject
+                {
+                    ["clip_name"] = (string)b["preset_id"] ?? "my-animation", ["mode"] = "retarget",
+                    ["glb_url"] = F($"{job.Id}-retarget.glb"), ["preview_url"] = F($"{job.Id}-retarget.mp4"),
+                };
+                if (b["preset_id"] != null) retargeted["preset_id"] = (string)b["preset_id"];
+                if (b["animation_id"] != null) retargeted["animation_id"] = (string)b["animation_id"];
+                if (b["mirror"] != null && (bool)b["mirror"]) retargeted["mirror"] = true;
+                return new JsonObject { ["animations"] = new JsonArray(retargeted) };
             case "/assets/sprite/animate":
+            case "/assets/sprite/transfer-motion":
                 var s = new JsonObject
                 {
                     ["spritesheet_url"] = F($"{job.Id}-sheet.webp"),

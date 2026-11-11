@@ -110,6 +110,21 @@ public class LudoAIPlugin : EditorWindow
     private string spritesheetFinalImage = "";
     private bool spritesheetAugmentPrompt = true;
 
+    // Animate Sprite from an Animation Clip or one of My Animations instead of a text
+    // description (POST /assets/sprite/transfer-motion): seen from a camera view, with its
+    // own models, rates and sheet options.
+    private string spritesheetSource = "prompt";
+    private string spritesheetPresetCategory = "";
+    private string spritesheetPresetId = "";
+    private string spritesheetMyAnimationId = "";
+    private bool spritesheetMirror = false;
+    private string spritesheetClipPerspective = "horizon";
+    private string spritesheetClipDirection = "S";
+    private string spritesheetClipPrompt = "";
+    private string transferModel = "hydra";
+    private float transferDuration = 3.0f;
+    private string transferMarginMode = "manual";
+
     // 3D Model Generation Variables
     private string model3DImageUrl = "";
     private string model3DBackImageUrl = ""; // optional back view (same subject, rotated 180 degrees)
@@ -137,6 +152,13 @@ public class LudoAIPlugin : EditorWindow
     private int model3DAnimateNumVariants = 4;
     private bool model3DAnimateLoop = true;
     private bool model3DAnimateAugmentPrompt = true;
+    // "prompt" animates from a text description; "preset" / "my_animation" retarget an
+    // Animation Clip or one of My Animations onto the model (POST /assets/3d-model/animate-preset).
+    private string model3DAnimateSource = "prompt";
+    private string model3DAnimatePresetCategory = "";
+    private string model3DAnimatePresetId = "";
+    private string model3DAnimateMyAnimationId = "";
+    private bool model3DAnimateMirror = false;
     private List<AnimationClip3D> current3DAnimations = new List<AnimationClip3D>();
     private Vector2 model3DAnimateScrollPosition;
 
@@ -162,8 +184,19 @@ public class LudoAIPlugin : EditorWindow
     private DirectionalStylesResponse directionalStyles = null;
     private bool directionalStylesLoading = false;
     private string directionalStylesError = null;
+    private string directionalMyAnimationId = "";
+    private bool directionalMirror = false;
+    // Animation Clips (Ludo's ready-made animations, "presets" in the API), shared by every tool.
     private List<AnimationPreset> animationPresets = null;
     private bool animationPresetsLoading = false;
+    // My Animations: the account's own animations (GET /assets/animations), made with
+    // Generate Animation here or in the web app, shared by every tool that plays one.
+    private List<PublicAnimation> myAnimations = null;
+    private bool myAnimationsLoading = false;
+    private string myAnimationsError = null;
+    private string newAnimationPrompt = "";
+    private int newAnimationVariants = 1;
+    private const int AnimationPromptMax = 1000;
     private List<DirectionalPreview> directionalPreviews = null;
     private Dictionary<string, List<Texture2D>> directionalPreviewFrames = new Dictionary<string, List<Texture2D>>();
     private List<DirectionalSheet> directionalSheets = null;
@@ -261,7 +294,23 @@ public class LudoAIPlugin : EditorWindow
         ["forge"] = new[] { 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f, 4.5f, 5f },
         ["forge-pixel"] = new[] { 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f, 4.5f, 5f }
     };
-    private readonly string[] spritesheetImageTypeOptions = { "sprite", "sprite-vfx", "item-icon", "ui_asset", "logo", "sprite-tiling-horizontal", "sprite-tiling-vertical", "parallax_layer", "tile", "texture", "portrait", "card-art" };
+    // Where an animation comes from on Animate Sprite and Animate 3D.
+    private readonly string[] animationSourceOptions = { "prompt", "preset", "my_animation" };
+    private readonly string[] animationSourceLabels = { "Text Description", "Animation Clip", "My Animation" };
+    // Animating a sprite from an Animation Clip or My Animation: its models and rates differ.
+    private readonly string[] transferModelOptions = { "hydra", "forge", "forge-pixel" };
+    private readonly string[] transferModelLabels = { "Hydra", "Forge", "Forge Pixel" };
+    private readonly string[] transferModelHints =
+    {
+        "Best motion and prompt adherence, and also generates a sound effect. 3 credits/s.",
+        "Cheapest alternative, for simple body shapes and simple actions. 2 credits/s.",
+        "Best for low-res pixel art animations. 2 credits/s."
+    };
+    private readonly int[] transferFrameSizeOptions = { 32, 64, 96, 128, 192, 256, 384, 0 };
+    private readonly string[] transferFrameSizeLabels = { "32x32", "64x64", "96x96", "128x128", "192x192", "256x256", "384x384", "Max" };
+    private readonly string[] transferMarginModeOptions = { "manual", "none" };
+    private readonly string[] transferMarginModeLabels = { "Manual", "No margin" };
+    private readonly string[] spritesheetImageTypeOptions ={ "sprite", "sprite-vfx", "item-icon", "ui_asset", "logo", "sprite-tiling-horizontal", "sprite-tiling-vertical", "parallax_layer", "tile", "texture", "portrait", "card-art" };
     
     private readonly int[] textureSizeOptions = { 1024, 2048 };
     private readonly string[] model3DModelOptions = { "prop", "hero" };
@@ -277,8 +326,8 @@ public class LudoAIPlugin : EditorWindow
     private readonly string[] model3DAnimateModeOptions = { "rot_trans", "rot_only" };
     private readonly string[] model3DAnimateModeLabels = { "Rotation + Translation", "Rotation Only (retargeting)" };
 
-    private readonly string[] directionalAnimationSourceOptions = { "none", "animation", "preset", "model_animation" };
-    private readonly string[] directionalAnimationSourceLabels = { "None (rest pose, one frame)", "Animation GLB (from Animate 3D)", "Animation preset", "Animation inside the GLB" };
+    private readonly string[] directionalAnimationSourceOptions = { "none", "animation", "preset", "my_animation", "model_animation" };
+    private readonly string[] directionalAnimationSourceLabels = { "None (rest pose, one frame)", "Animation GLB (from Animate 3D)", "Animation Clip", "My Animation", "Animation inside the GLB" };
     private readonly string[] directionalPerspectiveOptions = { "horizon", "low", "isometric", "high", "top" };
     private readonly string[] directionalPerspectiveLabels = { "Horizon (side view)", "Low", "Isometric", "High", "Top (straight down)" };
     // Where the camera stands around a character facing S.
@@ -739,7 +788,7 @@ public class LudoAIPlugin : EditorWindow
         GUILayout.EndHorizontal();
         GUILayout.Space(5);
         EditorGUILayout.HelpBox(
-            "BETA — Rigging is an early preview. Results can vary by mesh shape, and quality is still being improved. Not a final production feature yet.",
+            "BETA: Rigging is an early preview. Results can vary by mesh shape, and quality is still being improved. Not a final production feature yet.",
             MessageType.Warning);
         GUILayout.Space(5);
         GUILayout.Label(
@@ -784,7 +833,7 @@ public class LudoAIPlugin : EditorWindow
 
         if (model3DRigType == "humanoid_template" || model3DRigType == "humanoid_template_hands")
         {
-            GUILayout.Label("Template rigs only suit two-armed, two-legged characters. Animation presets retarget onto any rig type, though not onto every model.", EditorStyles.helpBox);
+            GUILayout.Label("Template rigs only suit two-armed, two-legged characters. Animation Clips retarget onto any rig type, though not onto every model.", EditorStyles.helpBox);
         }
 
         GUILayout.Space(5);
@@ -864,11 +913,11 @@ public class LudoAIPlugin : EditorWindow
         GUILayout.EndHorizontal();
         GUILayout.Space(5);
         EditorGUILayout.HelpBox(
-            "BETA — 3D animation is an early preview. Motion quality can be hit-or-miss (multiple candidates are returned so you can pick the best). Not a final production feature yet.",
+            "BETA: 3D animation is an early preview. Motion quality can be hit-or-miss (multiple candidates are returned so you can pick the best). Not a final production feature yet.",
             MessageType.Warning);
         GUILayout.Space(5);
         GUILayout.Label(
-            "Generate text-driven skeletal animations for an already-rigged GLB. Returned clips are animation-only (skeleton + clip, no mesh) — download the rigged model and fuse clips in Unity.",
+            "Generate text-driven skeletal animations for an already-rigged GLB. Returned clips are animation-only (skeleton + clip, no mesh): download the rigged model and fuse clips in Unity.",
             EditorStyles.helpBox);
 
         GUILayout.Space(10);
@@ -906,34 +955,61 @@ public class LudoAIPlugin : EditorWindow
 
         GUILayout.Space(10);
 
-        GUILayout.Label("Motion Prompt:");
-        model3DAnimatePrompt = EditorGUILayout.TextField(model3DAnimatePrompt);
+        int animateSourceIndex = Array.IndexOf(animationSourceOptions, model3DAnimateSource);
+        if (animateSourceIndex < 0) animateSourceIndex = 0;
+        animateSourceIndex = EditorGUILayout.Popup("Animation:", animateSourceIndex, animationSourceLabels);
+        model3DAnimateSource = animationSourceOptions[animateSourceIndex];
 
         GUILayout.Space(5);
 
-        int modeIndex = Array.IndexOf(model3DAnimateModeOptions, model3DAnimateMode);
-        if (modeIndex < 0) modeIndex = 0;
-        modeIndex = EditorGUILayout.Popup("Mode:", modeIndex, model3DAnimateModeLabels);
-        model3DAnimateMode = model3DAnimateModeOptions[modeIndex];
-
-        GUILayout.Space(5);
-
-        GUILayout.Label($"Variants: {model3DAnimateNumVariants}");
-        model3DAnimateNumVariants = (int)EditorGUILayout.Slider(model3DAnimateNumVariants, 1, 8);
-
-        GUILayout.Space(5);
-
-        model3DAnimateLoop = EditorGUILayout.Toggle("Loop Animation", model3DAnimateLoop);
-        model3DAnimateAugmentPrompt = EditorGUILayout.Toggle("Augment Prompt", model3DAnimateAugmentPrompt);
-
-        if (model3DAnimateLoop)
+        bool animateReady;
+        if (model3DAnimateSource == "prompt")
         {
-            GUILayout.Label("Loop mirrors the clip back to the rest pose. Best for one-way motions; cyclic gaits like walking may look odd.", EditorStyles.helpBox);
+            GUILayout.Label("Motion Prompt:");
+            model3DAnimatePrompt = EditorGUILayout.TextField(model3DAnimatePrompt);
+
+            GUILayout.Space(5);
+
+            int modeIndex = Array.IndexOf(model3DAnimateModeOptions, model3DAnimateMode);
+            if (modeIndex < 0) modeIndex = 0;
+            modeIndex = EditorGUILayout.Popup("Mode:", modeIndex, model3DAnimateModeLabels);
+            model3DAnimateMode = model3DAnimateModeOptions[modeIndex];
+
+            GUILayout.Space(5);
+
+            GUILayout.Label($"Variants: {model3DAnimateNumVariants}");
+            model3DAnimateNumVariants = (int)EditorGUILayout.Slider(model3DAnimateNumVariants, 1, 8);
+
+            GUILayout.Space(5);
+
+            model3DAnimateLoop = EditorGUILayout.Toggle("Loop Animation", model3DAnimateLoop);
+            model3DAnimateAugmentPrompt = EditorGUILayout.Toggle("Augment Prompt", model3DAnimateAugmentPrompt);
+
+            if (model3DAnimateLoop)
+            {
+                GUILayout.Label("Loop mirrors the clip back to the rest pose. Best for one-way motions; cyclic gaits like walking may look odd.", EditorStyles.helpBox);
+            }
+            animateReady = !string.IsNullOrEmpty(model3DAnimatePrompt);
+        }
+        else
+        {
+            if (model3DAnimateSource == "preset")
+            {
+                DrawAnimationClipPicker(ref model3DAnimatePresetCategory, ref model3DAnimatePresetId);
+                animateReady = !string.IsNullOrEmpty(model3DAnimatePresetId);
+            }
+            else
+            {
+                DrawMyAnimationPicker(ref model3DAnimateMyAnimationId, id => model3DAnimateMyAnimationId = id);
+                animateReady = MyAnimationExists(model3DAnimateMyAnimationId);
+            }
+            model3DAnimateMirror = DrawMirrorToggle(model3DAnimateMirror);
+            GUILayout.Label("The animation is retargeted onto the rigged model: one animation GLB comes back, 0.5 credits. An animation that loops is trimmed to its loop and plays on the spot.", EditorStyles.helpBox);
         }
 
         GUILayout.Space(10);
 
-        GUI.enabled = !isProcessing && !string.IsNullOrEmpty(model3DAnimateModelInput) && !string.IsNullOrEmpty(model3DAnimatePrompt);
+        GUI.enabled = !isProcessing && !string.IsNullOrEmpty(model3DAnimateModelInput) && animateReady;
         if (GUILayout.Button("Animate 3D Model", GUILayout.Height(30)))
         {
             isProcessing = true;
@@ -978,6 +1054,11 @@ public class LudoAIPlugin : EditorWindow
                 if (!string.IsNullOrEmpty(clip.Mode))
                 {
                     GUILayout.Label($"Mode: {clip.Mode}");
+                }
+
+                if (clip.Mirror)
+                {
+                    GUILayout.Label("Mirrored (left and right swapped)");
                 }
 
                 if (clip.Seed != 0 || clip.Motion != 0f || clip.FitRmse != 0f)
@@ -1117,7 +1198,13 @@ public class LudoAIPlugin : EditorWindow
         }
         else if (directionalAnimationSource == "preset")
         {
-            DrawDirectionalPresetPicker();
+            DrawAnimationClipPicker(ref directionalPresetCategory, ref directionalPresetId);
+            directionalMirror = DrawMirrorToggle(directionalMirror);
+        }
+        else if (directionalAnimationSource == "my_animation")
+        {
+            DrawMyAnimationPicker(ref directionalMyAnimationId, id => directionalMyAnimationId = id);
+            directionalMirror = DrawMirrorToggle(directionalMirror);
         }
         else if (directionalAnimationSource == "model_animation")
         {
@@ -1234,12 +1321,19 @@ public class LudoAIPlugin : EditorWindow
         {
             case "animation": return !string.IsNullOrEmpty(directionalAnimationUrl);
             case "preset": return !string.IsNullOrEmpty(directionalPresetId);
+            case "my_animation": return MyAnimationExists(directionalMyAnimationId);
             case "model_animation": return !string.IsNullOrEmpty(directionalModelAnimation);
             default: return true;
         }
     }
 
-    private void DrawDirectionalPresetPicker()
+    // ============================
+    // == ANIMATION CLIPS & MINE ==
+    // ============================
+    // Shared by Directional Sprites, Animate 3D and Animate Sprite: Ludo's Animation Clips,
+    // the account's My Animations, Generate Animation, and the Mirror toggle.
+
+    private void DrawAnimationClipPicker(ref string category, ref string clipId)
     {
         if (animationPresets == null)
         {
@@ -1247,44 +1341,232 @@ public class LudoAIPlugin : EditorWindow
             {
                 EditorCoroutineUtility.StartCoroutineOwnerless(LoadAnimationPresets());
             }
-            GUILayout.Label("Loading animation presets...");
+            GUILayout.Label("Loading Animation Clips...");
             return;
         }
         if (animationPresets.Count == 0)
         {
-            GUILayout.Label("No animation presets available.", EditorStyles.helpBox);
+            GUILayout.Label("No Animation Clips available.", EditorStyles.helpBox);
             return;
         }
 
         var categories = new List<string>();
         foreach (var preset in animationPresets)
         {
-            string category = string.IsNullOrEmpty(preset.Category) ? "Other" : preset.Category;
-            if (!categories.Contains(category)) categories.Add(category);
+            string c = string.IsNullOrEmpty(preset.Category) ? "Other" : preset.Category;
+            if (!categories.Contains(c)) categories.Add(c);
         }
-        int categoryIndex = categories.IndexOf(directionalPresetCategory);
+        int categoryIndex = categories.IndexOf(category);
         if (categoryIndex < 0) categoryIndex = 0;
-        categoryIndex = EditorGUILayout.Popup("Preset Category:", categoryIndex, categories.ToArray());
-        directionalPresetCategory = categories[categoryIndex];
+        categoryIndex = EditorGUILayout.Popup("Category:", categoryIndex, categories.ToArray());
+        string picked = categories[categoryIndex];
+        category = picked;
 
-        var inCategory = animationPresets.FindAll(p => (string.IsNullOrEmpty(p.Category) ? "Other" : p.Category) == directionalPresetCategory);
+        var inCategory = animationPresets.FindAll(p => (string.IsNullOrEmpty(p.Category) ? "Other" : p.Category) == picked);
         var names = inCategory.ConvertAll(p => string.IsNullOrEmpty(p.Name) ? p.Id : p.Name).ToArray();
-        int presetIndex = inCategory.FindIndex(p => p.Id == directionalPresetId);
-        if (presetIndex < 0) presetIndex = 0;
-        presetIndex = EditorGUILayout.Popup("Preset:", presetIndex, names);
-        AnimationPreset chosen = inCategory[presetIndex];
-        directionalPresetId = chosen.Id;
+        string current = clipId;
+        int clipIndex = inCategory.FindIndex(p => p.Id == current);
+        if (clipIndex < 0) clipIndex = 0;
+        clipIndex = EditorGUILayout.Popup("Animation Clip:", clipIndex, names);
+        AnimationPreset chosen = inCategory[clipIndex];
+        clipId = chosen.Id;
 
         if (!string.IsNullOrEmpty(chosen.Description))
         {
             GUILayout.Label(chosen.Description, EditorStyles.helpBox);
         }
-        if (!string.IsNullOrEmpty(chosen.PreviewUrl) && GUILayout.Button("Watch Preset Preview", GUILayout.Width(170)))
+        if (!string.IsNullOrEmpty(chosen.PreviewUrl) && GUILayout.Button("Watch Clip Preview", GUILayout.Width(170)))
         {
             Application.OpenURL(chosen.PreviewUrl);
         }
 
-        GUILayout.Label("Any rig type can take a preset, though retargeting does not succeed on every model: when it does not, the call returns an error.", EditorStyles.helpBox);
+        GUILayout.Label("Any rig type can take an Animation Clip, though retargeting does not succeed on every model: when it does not, the call returns an error.", EditorStyles.helpBox);
+    }
+
+    private bool MyAnimationExists(string id)
+    {
+        return !string.IsNullOrEmpty(id) && myAnimations != null && myAnimations.Exists(a => a.Id == id);
+    }
+
+    private static string MyAnimationLabel(PublicAnimation a)
+    {
+        string name = !string.IsNullOrEmpty(a.Name) ? a.Name : (!string.IsNullOrEmpty(a.Prompt) ? a.Prompt : a.Id);
+        string length = a.Duration > 0 ? $" ({a.Duration.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)}s{(a.Loop ? ", loops" : "")})" : "";
+        return name + length;
+    }
+
+    // Picks one of My Animations into `animationId`, with Generate Animation underneath;
+    // `pick` receives the id of an animation generated here once it is ready.
+    private void DrawMyAnimationPicker(ref string animationId, Action<string> pick)
+    {
+        if (myAnimations == null)
+        {
+            if (myAnimationsError != null)
+            {
+                EditorGUILayout.HelpBox(myAnimationsError, MessageType.Warning);
+                if (GUILayout.Button("Retry Loading My Animations", GUILayout.Width(200)))
+                {
+                    myAnimationsError = null;
+                }
+            }
+            else
+            {
+                if (!myAnimationsLoading)
+                {
+                    EditorCoroutineUtility.StartCoroutineOwnerless(LoadMyAnimations());
+                }
+                GUILayout.Label("Loading My Animations...");
+            }
+        }
+        else if (myAnimations.Count == 0)
+        {
+            GUILayout.Label("No animations yet. Animations you generate are kept in My Animations, ready to use on any character.", EditorStyles.helpBox);
+        }
+        else
+        {
+            string current = animationId;
+            int index = myAnimations.FindIndex(a => a.Id == current);
+            if (index < 0) index = 0;
+            index = EditorGUILayout.Popup("My Animation:", index, myAnimations.ConvertAll(MyAnimationLabel).ToArray());
+            PublicAnimation chosen = myAnimations[index];
+            animationId = chosen.Id;
+
+            if (!string.IsNullOrEmpty(chosen.Prompt))
+            {
+                GUILayout.Label($"Made from: {chosen.Prompt}", EditorStyles.helpBox);
+            }
+            GUILayout.BeginHorizontal();
+            if (!string.IsNullOrEmpty(chosen.PreviewUrl) && GUILayout.Button("Watch Animation Preview", GUILayout.Width(180)))
+            {
+                Application.OpenURL(chosen.PreviewUrl);
+            }
+            GUI.enabled = !myAnimationsLoading;
+            if (GUILayout.Button("Refresh My Animations", GUILayout.Width(170)))
+            {
+                EditorCoroutineUtility.StartCoroutineOwnerless(LoadMyAnimations());
+            }
+            GUI.enabled = true;
+            GUILayout.EndHorizontal();
+        }
+
+        GUILayout.Space(5);
+        DrawGenerateAnimation(pick);
+    }
+
+    private void DrawGenerateAnimation(Action<string> pick)
+    {
+        GUILayout.BeginVertical("box");
+        GUILayout.Label("Generate Animation", EditorStyles.boldLabel);
+        GUILayout.Label("Describe a move and get an animation any humanoid character can play. It is saved to My Animations, to use again on any character and from any view.", EditorStyles.helpBox);
+        GUILayout.Label("Description (e.g. \"overhead sword slash\", \"zombie walk\"):");
+        newAnimationPrompt = EditorGUILayout.TextField(newAnimationPrompt);
+        if (newAnimationPrompt.Length > AnimationPromptMax) newAnimationPrompt = newAnimationPrompt.Substring(0, AnimationPromptMax);
+        newAnimationVariants = EditorGUILayout.IntSlider("Variations:", newAnimationVariants, 1, 4);
+
+        float cost = 0.5f * newAnimationVariants;
+        string credits = cost.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + (cost == 1f ? " credit" : " credits");
+        string label = newAnimationVariants > 1 ? $"Generate Animations ({credits})" : $"Generate Animation ({credits})";
+        GUI.enabled = !isProcessing && !string.IsNullOrWhiteSpace(newAnimationPrompt);
+        if (GUILayout.Button(label, GUILayout.Height(26)))
+        {
+            isProcessing = true;
+            statusMessage = "Generating animation...";
+            EditorCoroutineUtility.StartCoroutineOwnerless(CreateAnimation(pick));
+        }
+        GUI.enabled = true;
+        GUILayout.EndVertical();
+    }
+
+    private bool DrawMirrorToggle(bool on)
+    {
+        on = EditorGUILayout.Toggle("Mirror", on);
+        GUILayout.Label("Plays the move on the other side, left and right swapped. Use it when the animation's weapon hand is not your character's.", EditorStyles.helpBox);
+        return on;
+    }
+
+    private IEnumerator LoadMyAnimations()
+    {
+        myAnimationsLoading = true;
+        var result = new EditorHttpResult();
+        yield return SendJsonWithHttpClient(HttpMethod.Get, apiUrl + "/assets/animations?limit=200", null, 60, result);
+        myAnimationsLoading = false;
+
+        if (!result.Success)
+        {
+            myAnimationsError = FormatEditorHttpError("loading My Animations", result);
+            Debug.LogWarning($"[LudoAIPlugin] {myAnimationsError}");
+            myAnimations = null;
+            Repaint();
+            yield break;
+        }
+        try
+        {
+            var response = JsonConvert.DeserializeObject<AnimationsResult>(result.Body);
+            myAnimations = response != null && response.Animations != null ? response.Animations : new List<PublicAnimation>();
+            myAnimationsError = null;
+        }
+        catch (Exception e)
+        {
+            myAnimationsError = $"Could not read My Animations: {e.Message}";
+            myAnimations = null;
+        }
+        Repaint();
+    }
+
+    private IEnumerator CreateAnimation(Action<string> pick)
+    {
+        string prompt = newAnimationPrompt.Trim();
+        if (!ValidateRequired(prompt, "Animation description"))
+        {
+            isProcessing = false;
+            yield break;
+        }
+
+        var payload = new Dictionary<string, object>
+        {
+            ["prompt"] = prompt,
+            ["num_variants"] = newAnimationVariants
+        };
+
+        var job = new EditorHttpResult();
+        yield return RunApiJob("/assets/animation", payload, "Generating animation", job);
+
+        if (!job.Success)
+        {
+            statusMessage = FormatEditorHttpError("generating animation", job);
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog("Generate Animation Error", statusMessage, "OK");
+            isProcessing = false;
+            yield break;
+        }
+
+        try
+        {
+            var response = JsonConvert.DeserializeObject<AnimationsResult>(job.Body);
+            var made = response != null && response.Animations != null ? response.Animations.FindAll(a => !string.IsNullOrEmpty(a.Id)) : new List<PublicAnimation>();
+            if (made.Count > 0)
+            {
+                if (myAnimations == null) myAnimations = new List<PublicAnimation>();
+                myAnimations.RemoveAll(a => made.Exists(m => m.Id == a.Id));
+                myAnimations.InsertRange(0, made); // newest first, like the list
+                if (pick != null) pick(made[0].Id);
+                statusMessage = made.Count == 1
+                    ? $"Animation \"{MyAnimationLabel(made[0])}\" generated and saved to My Animations."
+                    : $"Generated {made.Count} animations and saved them to My Animations. The first one is picked.";
+            }
+            else
+            {
+                statusMessage = "The animation came back empty.";
+                EditorUtility.DisplayDialog("Generate Animation Error", statusMessage, "OK");
+            }
+        }
+        catch (Exception e)
+        {
+            statusMessage = $"Error reading the animation: {e.Message}";
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog("Generate Animation Error", statusMessage, "OK");
+        }
+        isProcessing = false;
     }
 
     private void DrawDirectionalStylePicker()
@@ -1573,9 +1855,17 @@ public class LudoAIPlugin : EditorWindow
             case "preset":
                 payload["preset_id"] = directionalPresetId;
                 break;
+            case "my_animation":
+                payload["animation_id"] = directionalMyAnimationId;
+                break;
             case "model_animation":
                 payload["model_animation"] = directionalModelAnimation;
                 break;
+        }
+        // Mirror takes a clip or one of My Animations; with anything else the API answers 400.
+        if (directionalMirror && (directionalAnimationSource == "preset" || directionalAnimationSource == "my_animation"))
+        {
+            payload["mirror"] = true;
         }
         if (directionalAnimationSource != "none")
         {
@@ -1622,7 +1912,7 @@ public class LudoAIPlugin : EditorWindow
 
         if (!result.Success)
         {
-            statusMessage = FormatEditorHttpError("loading animation presets", result);
+            statusMessage = FormatEditorHttpError("loading Animation Clips", result);
             Debug.LogWarning($"[LudoAIPlugin] {statusMessage}");
             animationPresets = new List<AnimationPreset>();
             yield break;
@@ -1634,7 +1924,7 @@ public class LudoAIPlugin : EditorWindow
         }
         catch (Exception e)
         {
-            statusMessage = $"Could not read the animation presets: {e.Message}";
+            statusMessage = $"Could not read the Animation Clips: {e.Message}";
             animationPresets = new List<AnimationPreset>();
         }
         Repaint();
@@ -2316,8 +2606,50 @@ public class LudoAIPlugin : EditorWindow
 
         GUILayout.Space(10);
 
-        GUILayout.Label("Motion Description:");
-        spritesheetMotionHint = EditorGUILayout.TextField(spritesheetMotionHint);
+        int spriteSourceIndex = Array.IndexOf(animationSourceOptions, spritesheetSource);
+        if (spriteSourceIndex < 0) spriteSourceIndex = 0;
+        spriteSourceIndex = EditorGUILayout.Popup("Animation:", spriteSourceIndex, animationSourceLabels);
+        spritesheetSource = animationSourceOptions[spriteSourceIndex];
+        // An Animation Clip or one of My Animations is played on the sprite from a camera view
+        // (transfer-motion), with its own models, rates and sheet options.
+        bool fromClip = spritesheetSource != "prompt";
+        bool sourceReady;
+
+        GUILayout.Space(5);
+
+        if (!fromClip)
+        {
+            GUILayout.Label("Motion Description:");
+            spritesheetMotionHint = EditorGUILayout.TextField(spritesheetMotionHint);
+            sourceReady = !string.IsNullOrEmpty(spritesheetMotionHint);
+        }
+        else
+        {
+            if (spritesheetSource == "preset")
+            {
+                DrawAnimationClipPicker(ref spritesheetPresetCategory, ref spritesheetPresetId);
+                sourceReady = !string.IsNullOrEmpty(spritesheetPresetId);
+            }
+            else
+            {
+                DrawMyAnimationPicker(ref spritesheetMyAnimationId, id => spritesheetMyAnimationId = id);
+                sourceReady = MyAnimationExists(spritesheetMyAnimationId);
+            }
+            spritesheetMirror = DrawMirrorToggle(spritesheetMirror);
+
+            int viewIndex = Array.IndexOf(directionalPerspectiveOptions, spritesheetClipPerspective);
+            if (viewIndex < 0) viewIndex = 0;
+            viewIndex = EditorGUILayout.Popup("Camera Height:", viewIndex, directionalPerspectiveLabels);
+            spritesheetClipPerspective = directionalPerspectiveOptions[viewIndex];
+            int directionIndex = Array.IndexOf(directionalDirectionOptions, spritesheetClipDirection);
+            if (directionIndex < 0) directionIndex = 0;
+            directionIndex = EditorGUILayout.Popup("Camera Direction:", directionIndex, directionalDirectionOptions);
+            spritesheetClipDirection = directionalDirectionOptions[directionIndex];
+            GUILayout.Label("Pick the view your sprite is drawn from: the camera height, and where the camera stands around a character facing S.", EditorStyles.helpBox);
+
+            GUILayout.Label("Extra Instructions (optional, e.g. \"keep the cape still\"):");
+            spritesheetClipPrompt = EditorGUILayout.TextField(spritesheetClipPrompt);
+        }
 
         GUILayout.Space(5);
 
@@ -2333,24 +2665,39 @@ public class LudoAIPlugin : EditorWindow
         currentFrameIndex = EditorGUILayout.Popup(currentFrameIndex, Array.ConvertAll(frameOptions, x => x.ToString()));
         spritesheetFrames = frameOptions[currentFrameIndex];
 
-        // Frame Size dropdown with predefined options
+        // Frame Size dropdown with predefined options (no AI upscale or input match from a clip)
         GUILayout.Label("Frame Size:");
-        int currentFrameSizeIndex = Array.IndexOf(frameSizeOptions, spritesheetFrameSize);
-        if (currentFrameSizeIndex < 0) currentFrameSizeIndex = Array.IndexOf(frameSizeOptions, 256);
-        currentFrameSizeIndex = EditorGUILayout.Popup(currentFrameSizeIndex, frameSizeLabels);
-        spritesheetFrameSize = frameSizeOptions[currentFrameSizeIndex];
+        int[] sizeOptions = fromClip ? transferFrameSizeOptions : frameSizeOptions;
+        string[] sizeLabels = fromClip ? transferFrameSizeLabels : frameSizeLabels;
+        int currentFrameSizeIndex = Array.IndexOf(sizeOptions, spritesheetFrameSize);
+        if (currentFrameSizeIndex < 0) currentFrameSizeIndex = Array.IndexOf(sizeOptions, 256);
+        currentFrameSizeIndex = EditorGUILayout.Popup(currentFrameSizeIndex, sizeLabels);
+        spritesheetFrameSize = sizeOptions[currentFrameSizeIndex];
 
         GUILayout.Space(5);
 
-        // Margin Mode dropdown
+        // Margin Mode dropdown (a clip has no Auto)
         GUILayout.Label("Margin Mode:");
-        int marginModeIndex = Array.IndexOf(marginModeOptions, spritesheetMarginMode);
-        if (marginModeIndex < 0) marginModeIndex = 0; // Default to auto
-        marginModeIndex = EditorGUILayout.Popup(marginModeIndex, marginModeLabels);
-        spritesheetMarginMode = marginModeOptions[marginModeIndex];
+        string marginMode;
+        if (fromClip)
+        {
+            int transferMarginIndex = Array.IndexOf(transferMarginModeOptions, transferMarginMode);
+            if (transferMarginIndex < 0) transferMarginIndex = 0;
+            transferMarginIndex = EditorGUILayout.Popup(transferMarginIndex, transferMarginModeLabels);
+            transferMarginMode = transferMarginModeOptions[transferMarginIndex];
+            marginMode = transferMarginMode;
+        }
+        else
+        {
+            int marginModeIndex = Array.IndexOf(marginModeOptions, spritesheetMarginMode);
+            if (marginModeIndex < 0) marginModeIndex = 0; // Default to auto
+            marginModeIndex = EditorGUILayout.Popup(marginModeIndex, marginModeLabels);
+            spritesheetMarginMode = marginModeOptions[marginModeIndex];
+            marginMode = spritesheetMarginMode;
+        }
 
         // Margin sliders (as a ratio of the sprite size) only in manual mode
-        if (spritesheetMarginMode == "manual")
+        if (marginMode == "manual")
         {
             spritesheetMarginHorizontal = EditorGUILayout.Slider("Horizontal Margin", spritesheetMarginHorizontal, 0f, 1f);
             spritesheetMarginVertical = EditorGUILayout.Slider("Vertical Margin", spritesheetMarginVertical, 0f, 1f);
@@ -2358,40 +2705,56 @@ public class LudoAIPlugin : EditorWindow
 
         GUILayout.Space(5);
 
-        // Model selection
+        // Model selection, and its durations
         GUILayout.Label("Animation Model:");
-        int modelIndex = Array.IndexOf(spritesheetModelOptions, spritesheetModel);
-        if (modelIndex < 0) modelIndex = 0; // Default to hydra
-        modelIndex = EditorGUILayout.Popup(modelIndex, spritesheetModelLabels);
-        spritesheetModel = spritesheetModelOptions[modelIndex];
-        EditorGUILayout.LabelField(spritesheetModelHints[modelIndex], EditorStyles.helpBox);
+        if (fromClip)
+        {
+            int transferModelIndex = Array.IndexOf(transferModelOptions, transferModel);
+            if (transferModelIndex < 0) transferModelIndex = 0;
+            transferModelIndex = EditorGUILayout.Popup(transferModelIndex, transferModelLabels);
+            transferModel = transferModelOptions[transferModelIndex];
+            EditorGUILayout.LabelField(transferModelHints[transferModelIndex], EditorStyles.helpBox);
+        }
+        else
+        {
+            int modelIndex = Array.IndexOf(spritesheetModelOptions, spritesheetModel);
+            if (modelIndex < 0) modelIndex = 0; // Default to hydra
+            modelIndex = EditorGUILayout.Popup(modelIndex, spritesheetModelLabels);
+            spritesheetModel = spritesheetModelOptions[modelIndex];
+            EditorGUILayout.LabelField(spritesheetModelHints[modelIndex], EditorStyles.helpBox);
+        }
 
         GUILayout.Space(5);
 
-        // Duration: each model offers its own set
+        // Duration: each model offers its own set (the same sets from a clip)
         GUILayout.Label("Duration (seconds):");
-        float[] durations = spritesheetModelDurations[spritesheetModel];
-        int durationIndex = Array.IndexOf(durations, spritesheetDuration);
+        float[] durations = spritesheetModelDurations[fromClip ? transferModel : spritesheetModel];
+        float currentDuration = fromClip ? transferDuration : spritesheetDuration;
+        int durationIndex = Array.IndexOf(durations, currentDuration);
         if (durationIndex < 0) durationIndex = 0;
         durationIndex = EditorGUILayout.Popup(durationIndex, Array.ConvertAll(durations, d => d.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + "s"));
-        spritesheetDuration = durations[durationIndex];
+        if (fromClip) transferDuration = durations[durationIndex];
+        else spritesheetDuration = durations[durationIndex];
 
         GUILayout.Space(5);
 
-        // Image Type dropdown
-        GUILayout.Label("Image Type:");
-        int imageTypeIndex = Array.IndexOf(spritesheetImageTypeOptions, spritesheetImageType);
-        if (imageTypeIndex < 0) imageTypeIndex = 0; // Default to sprite
-        imageTypeIndex = EditorGUILayout.Popup(imageTypeIndex, spritesheetImageTypeOptions);
-        spritesheetImageType = spritesheetImageTypeOptions[imageTypeIndex];
+        if (!fromClip)
+        {
+            // Image Type dropdown
+            GUILayout.Label("Image Type:");
+            int imageTypeIndex = Array.IndexOf(spritesheetImageTypeOptions, spritesheetImageType);
+            if (imageTypeIndex < 0) imageTypeIndex = 0; // Default to sprite
+            imageTypeIndex = EditorGUILayout.Popup(imageTypeIndex, spritesheetImageTypeOptions);
+            spritesheetImageType = spritesheetImageTypeOptions[imageTypeIndex];
 
-        GUILayout.Space(5);
+            GUILayout.Space(5);
+        }
 
         spritesheetGif = EditorGUILayout.Toggle("Also create a GIF", spritesheetGif);
 
         GUILayout.Space(10);
 
-        GUI.enabled = !isProcessing && !string.IsNullOrEmpty(spritesheetInitialImageUrl) && !string.IsNullOrEmpty(spritesheetMotionHint);
+        GUI.enabled = !isProcessing && !string.IsNullOrEmpty(spritesheetInitialImageUrl) && sourceReady;
         if (GUILayout.Button("Animate Sprite", GUILayout.Height(30)))
         {
             isProcessing = true;
@@ -2784,24 +3147,56 @@ public class LudoAIPlugin : EditorWindow
             ? spritesheetInitialImageUrl
             : (selectedSprite != null ? selectedSprite.Image.Url : "");
 
-        // Build the request payload according to the new API schema
-        var requestData = new Dictionary<string, object>
+        bool fromClip = spritesheetSource != "prompt";
+        Dictionary<string, object> requestData;
+        string marginMode;
+        if (!fromClip)
         {
-            ["motion_prompt"] = spritesheetMotionHint,
-            ["initial_image"] = initialImageUrl,
-            ["loop"] = spritesheetLoop,
-            ["crop"] = spritesheetCrop,
-            ["frames"] = spritesheetFrames,
-            ["frame_size"] = spritesheetFrameSize,
-            ["model"] = spritesheetModel,
-            ["duration"] = spritesheetDuration,
-            ["image_type"] = spritesheetImageType,
-            ["augment_prompt"] = spritesheetAugmentPrompt
-        };
+            // Build the request payload according to the new API schema
+            requestData = new Dictionary<string, object>
+            {
+                ["motion_prompt"] = spritesheetMotionHint,
+                ["initial_image"] = initialImageUrl,
+                ["loop"] = spritesheetLoop,
+                ["crop"] = spritesheetCrop,
+                ["frames"] = spritesheetFrames,
+                ["frame_size"] = spritesheetFrameSize,
+                ["model"] = spritesheetModel,
+                ["duration"] = spritesheetDuration,
+                ["image_type"] = spritesheetImageType,
+                ["augment_prompt"] = spritesheetAugmentPrompt
+            };
+            marginMode = spritesheetMarginMode;
+            if (!string.IsNullOrEmpty(spritesheetFinalImage))
+            {
+                requestData["final_image"] = spritesheetFinalImage;
+            }
+        }
+        else
+        {
+            // An Animation Clip or one of My Animations, seen from a camera view (both required).
+            requestData = new Dictionary<string, object>
+            {
+                ["image"] = initialImageUrl,
+                ["perspective"] = spritesheetClipPerspective,
+                ["direction"] = spritesheetClipDirection,
+                ["loop"] = spritesheetLoop,
+                ["crop"] = spritesheetCrop,
+                ["frames"] = spritesheetFrames,
+                ["frame_size"] = Array.IndexOf(transferFrameSizeOptions, spritesheetFrameSize) >= 0 ? spritesheetFrameSize : 256,
+                ["model"] = transferModel,
+                ["duration"] = transferDuration
+            };
+            if (spritesheetSource == "preset") requestData["preset_id"] = spritesheetPresetId;
+            else requestData["animation_id"] = spritesheetMyAnimationId;
+            if (spritesheetMirror) requestData["mirror"] = true;
+            if (!string.IsNullOrWhiteSpace(spritesheetClipPrompt)) requestData["prompt"] = spritesheetClipPrompt.Trim();
+            marginMode = transferMarginMode;
+        }
 
         // Margins: per-axis values only in manual mode ("auto"/"none" reject a value)
-        requestData["margin_ratio_mode"] = spritesheetMarginMode;
-        if (spritesheetMarginMode == "manual")
+        requestData["margin_ratio_mode"] = marginMode;
+        if (marginMode == "manual")
         {
             requestData["margin_ratio_horizontal"] = spritesheetMarginHorizontal;
             requestData["margin_ratio_vertical"] = spritesheetMarginVertical;
@@ -2812,13 +3207,8 @@ public class LudoAIPlugin : EditorWindow
             requestData["gif"] = true;
         }
 
-        if (!string.IsNullOrEmpty(spritesheetFinalImage))
-        {
-            requestData["final_image"] = spritesheetFinalImage;
-        }
-
         var job = new EditorHttpResult();
-        yield return RunApiJob("/assets/sprite/animate", requestData, "Animating sprite", job);
+        yield return RunApiJob(fromClip ? "/assets/sprite/transfer-motion" : "/assets/sprite/animate", requestData, "Animating sprite", job);
 
         if (!job.Success)
         {
@@ -3560,32 +3950,47 @@ public class LudoAIPlugin : EditorWindow
             yield break;
         }
 
-        if (!ValidateRequired(model3DAnimatePrompt, "Motion prompt"))
+        Dictionary<string, object> requestData;
+        string endpoint;
+        if (model3DAnimateSource == "prompt")
         {
-            isProcessing = false;
-            yield break;
+            if (!ValidateRequired(model3DAnimatePrompt, "Motion prompt"))
+            {
+                isProcessing = false;
+                yield break;
+            }
+
+            if (!ValidateRange(model3DAnimateNumVariants, 1, 8, "Number of variants"))
+            {
+                isProcessing = false;
+                yield break;
+            }
+
+            requestData = new Dictionary<string, object>
+            {
+                ["model"] = model3DAnimateModelInput,
+                ["prompt"] = model3DAnimatePrompt,
+                ["mode"] = model3DAnimateMode,
+                ["num_variants"] = model3DAnimateNumVariants,
+                ["loop"] = model3DAnimateLoop,
+                ["augment_prompt"] = model3DAnimateAugmentPrompt
+            };
+            endpoint = "/assets/3d-model/animate";
+            Debug.Log($"[LudoAIPlugin] 3D Model animate request (prompt={model3DAnimatePrompt}, variants={model3DAnimateNumVariants}, mode={model3DAnimateMode})");
         }
-
-        if (!ValidateRange(model3DAnimateNumVariants, 1, 8, "Number of variants"))
+        else
         {
-            isProcessing = false;
-            yield break;
+            // Exactly one of an Animation Clip and one of My Animations.
+            requestData = new Dictionary<string, object> { ["model"] = model3DAnimateModelInput };
+            if (model3DAnimateSource == "preset") requestData["preset_id"] = model3DAnimatePresetId;
+            else requestData["animation_id"] = model3DAnimateMyAnimationId;
+            if (model3DAnimateMirror) requestData["mirror"] = true;
+            endpoint = "/assets/3d-model/animate-preset";
+            Debug.Log($"[LudoAIPlugin] 3D Model retarget request ({model3DAnimateSource}, mirror={model3DAnimateMirror})");
         }
-
-        var requestData = new Dictionary<string, object>
-        {
-            ["model"] = model3DAnimateModelInput,
-            ["prompt"] = model3DAnimatePrompt,
-            ["mode"] = model3DAnimateMode,
-            ["num_variants"] = model3DAnimateNumVariants,
-            ["loop"] = model3DAnimateLoop,
-            ["augment_prompt"] = model3DAnimateAugmentPrompt
-        };
-
-        Debug.Log($"[LudoAIPlugin] 3D Model animate request (prompt={model3DAnimatePrompt}, variants={model3DAnimateNumVariants}, mode={model3DAnimateMode})");
 
         var job = new EditorHttpResult();
-        yield return RunApiJob("/assets/3d-model/animate", requestData, "Animating 3D model", job);
+        yield return RunApiJob(endpoint, requestData, "Animating 3D model", job);
 
         if (!job.Success)
         {
@@ -4349,7 +4754,7 @@ public class LudoAIPlugin : EditorWindow
 
         if (!hasTransparency)
         {
-            Debug.LogWarning("[LudoAIPlugin] Source image has no transparency. The 3D API requires RGBA with alpha — generation may fail. Prefer a PNG with a transparent background.");
+            Debug.LogWarning("[LudoAIPlugin] Source image has no transparency. The 3D API requires RGBA with alpha, so generation may fail. Prefer a PNG with a transparent background.");
         }
 
         Debug.Log($"[LudoAIPlugin] Prepared 3D upload image as RGBA PNG ({pngBytes.Length} bytes, {outW}x{outH}).");
@@ -4700,6 +5105,12 @@ public class LudoAIPlugin : EditorWindow
         [JsonProperty("preset_id")]
         public string PresetId { get; set; }
 
+        [JsonProperty("animation_id")]
+        public string AnimationId { get; set; }
+
+        [JsonProperty("mirror")]
+        public bool Mirror { get; set; }
+
         [JsonProperty("mode")]
         public string Mode { get; set; }
 
@@ -4858,6 +5269,43 @@ public class LudoAIPlugin : EditorWindow
 
         [JsonProperty("preview_url")]
         public string PreviewUrl { get; set; }
+    }
+
+    // GET /assets/animations (My Animations) and the result of POST /assets/animation
+    [Serializable]
+    public class AnimationsResult
+    {
+        [JsonProperty("animations")]
+        public List<PublicAnimation> Animations { get; set; }
+    }
+
+    [Serializable]
+    public class PublicAnimation
+    {
+        [JsonProperty("id")]
+        public string Id { get; set; }
+
+        [JsonProperty("name")]
+        public string Name { get; set; }
+
+        [JsonProperty("prompt")]
+        public string Prompt { get; set; }
+
+        [JsonProperty("caption")]
+        public string Caption { get; set; }
+
+        [JsonProperty("duration")]
+        public float Duration { get; set; }
+
+        [JsonProperty("loop")]
+        public bool Loop { get; set; }
+
+        // An mp4 of the move on a mannequin; it does not expire.
+        [JsonProperty("preview_url")]
+        public string PreviewUrl { get; set; }
+
+        [JsonProperty("created_at")]
+        public long CreatedAt { get; set; }
     }
 
     [Serializable]

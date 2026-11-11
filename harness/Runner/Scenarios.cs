@@ -601,6 +601,261 @@ public static class Scenarios
         c.CheckClean(p);
     }
 
+    // ---------------------------------------------------------------- My Animations, Mirror
+
+    static JsonObject Animation(string id, string name, string prompt) => new()
+    {
+        ["id"] = id, ["name"] = name, ["prompt"] = prompt, ["duration"] = 3.0, ["loop"] = true,
+        ["preview_url"] = $"http://127.0.0.1/files/{id}.mp4", ["created_at"] = 1762800000,
+    };
+
+    // Generate Animation from the My Animation source, then the new animation is picked and
+    // goes out as animation_id; Mirror goes with it (and with a clip) but never elsewhere.
+    static void MyAnimationsDirectional(Ctx c)
+    {
+        var p = DirectionalPlugin(c, new FakeLudoApi.Behavior { PollsUntilDone = 1, PollAfterMs = 1, MyAnimations = new() { Animation("6a1f00000000000000000000old1", "zombie-walk", "zombie walk") } });
+        p.Set("directionalModelInput", FakeFile(c, "rigged.glb"));
+        p.Set("directionalAnimationSource", "my_animation");
+        p.Gui();
+        c.Require(p.RunUntilIdle(20), "My Animations never loaded");
+        p.Gui();
+        c.Check(PluginDriver.Count(p.Get("myAnimations")) == 1 && p.Get<string>("directionalMyAnimationId") == "6a1f00000000000000000000old1", $"the account's animation is not listed and picked ({p.Get<string>("directionalMyAnimationId")})");
+        c.Check(c.Api.Requests.Any(r => r.Method == "GET" && r.Path == "/api/assets/animations"), "My Animations not read from GET /assets/animations");
+
+        // an empty description cannot be sent
+        c.Check(!ButtonEnabled(p, "Generate Animation (0.5 credits)"), "Generate Animation is enabled with no description");
+        p.Set("newAnimationPrompt", "overhead sword slash");
+        p.Set("newAnimationVariants", 2);
+        p.Click("Generate Animations (1 credit)");
+        c.Require(p.RunUntilIdle(20), "Generate Animation never finished: " + p.Status);
+        var gen = LastBody(c, "/assets/animation");
+        c.Check((string)gen?["prompt"] == "overhead sword slash" && gen?["num_variants"]?.GetValue<double>() == 2, $"createAnimation body ({gen})");
+        var mine = (IList)p.Get("myAnimations");
+        c.Require(mine.Count == 3, $"My Animations has {mine.Count}, expected the old one plus 2 new");
+        string made = (string)PluginDriver.Prop(mine[0], "Id");
+        c.Check(made != "6a1f00000000000000000000old1" && p.Get<string>("directionalMyAnimationId") == made, "the generated animation was not picked");
+        c.Check(p.Status.Contains("My Animations"), $"status does not say where it went: '{p.Status}'");
+
+        // without Mirror
+        p.Click("Preview (free)");
+        c.Require(p.RunUntilIdle(20), "preview never finished: " + p.Status);
+        var body = LastBody(c, "/assets/sprite/directional-preview");
+        c.Check((string)body?["animation_id"] == made && body?["preset_id"] == null && body?["mirror"] == null, $"preview: animation_id / no mirror ({body})");
+        // with Mirror, on the preview and the sheets
+        p.Set("directionalMirror", true);
+        p.Click("Preview (free)");
+        c.Require(p.RunUntilIdle(20), "mirrored preview never finished");
+        c.Check(LastBody(c, "/assets/sprite/directional-preview")?["mirror"]?.GetValue<bool>() == true, "preview: mirror not sent");
+        p.Click("Render Spritesheets (1 credit)");
+        c.Require(p.RunUntilIdle(20), "mirrored sheet never finished");
+        body = LastBody(c, "/assets/sprite/directional");
+        c.Check((string)body?["animation_id"] == made && body?["mirror"]?.GetValue<bool>() == true && body?["num_frames"] != null, $"sheets: animation_id + mirror ({body})");
+
+        // an Animation Clip takes Mirror too, and only one animation goes out
+        p.Set("directionalAnimationSource", "preset");
+        p.Gui();
+        c.Require(p.RunUntilIdle(20), "Animation Clips never loaded");
+        p.Gui();
+        p.Click("Render Spritesheets (1 credit)");
+        c.Require(p.RunUntilIdle(20), "mirrored clip sheet never finished");
+        body = LastBody(c, "/assets/sprite/directional");
+        c.Check(body?["preset_id"] != null && body?["animation_id"] == null && body?["mirror"]?.GetValue<bool>() == true, $"clip: preset_id + mirror only ({body})");
+        p.Set("directionalMirror", false);
+        p.Click("Render Spritesheets (1 credit)");
+        c.Require(p.RunUntilIdle(20), "clip sheet never finished");
+        c.Check(LastBody(c, "/assets/sprite/directional")?["mirror"] == null, "clip without Mirror still sends mirror");
+
+        // Mirror left on, then a source that cannot take it: not sent (the API answers 400)
+        p.Set("directionalMirror", true);
+        p.Set("directionalAnimationSource", "model_animation");
+        p.Set("directionalModelAnimation", "Walk");
+        p.Click("Render Spritesheets (1 credit)");
+        c.Require(p.RunUntilIdle(20), "model_animation sheet never finished");
+        body = LastBody(c, "/assets/sprite/directional");
+        c.Check(body?["mirror"] == null && body?["preset_id"] == null && body?["animation_id"] == null, $"model_animation sent mirror or a second animation ({body})");
+        // stills take no animation at all
+        p.Click("Render Stills (0.5 credits)");
+        c.Require(p.RunUntilIdle(20), "stills never finished");
+        body = LastBody(c, "/assets/sprite/directional-stills");
+        c.Check(body?["mirror"] == null && body?["animation_id"] == null, $"stills sent an animation ({body})");
+        c.CheckClean(p);
+    }
+
+    // Animate 3D retargets an Animation Clip or one of My Animations (animate-preset).
+    static void AnimationClips3D(Ctx c)
+    {
+        var p = c.NewPlugin(new FakeLudoApi.Behavior { PollsUntilDone = 1, PollAfterMs = 1, MyAnimations = new() { Animation("6a1f00000000000000000000mine", "victory-dance", "victory dance") } });
+        Tab(p, "Models", "currentModelTab", "Animate");
+        p.Set("model3DAnimateModelInput", FakeFile(c, "rigged-hero.glb"));
+        p.Set("model3DAnimateSource", "preset");
+        p.Gui();
+        c.Require(p.RunUntilIdle(20), "Animation Clips never loaded");
+        p.Gui();
+        p.Click("Animate 3D Model");
+        c.Require(p.RunUntilIdle(20), "clip retarget never finished: " + p.Status);
+        var body = LastBody(c, "/assets/3d-model/animate-preset");
+        c.Check((string)body?["preset_id"] == "walk_relaxed" && body?["animation_id"] == null && body?["mirror"] == null, $"clip retarget body ({body})");
+        foreach (var f in new[] { "prompt", "num_variants", "mode", "loop", "augment_prompt" }) c.Check(body?[f] == null, $"clip retarget sent '{f}'");
+        c.Check(c.Api.Posts("/api/assets/3d-model/animate").Count == 0, "a clip went to the text animation endpoint");
+        c.Require(PluginDriver.Count(p.Get("current3DAnimations")) == 1, $"retarget results: {PluginDriver.Count(p.Get("current3DAnimations"))}");
+        ClickSave(c, p, "Download Animation GLB", "glb");
+
+        p.Set("model3DAnimateMirror", true);
+        p.Click("Animate 3D Model");
+        c.Require(p.RunUntilIdle(20), "mirrored clip retarget never finished");
+        c.Check(LastBody(c, "/assets/3d-model/animate-preset")?["mirror"]?.GetValue<bool>() == true, "clip retarget: mirror not sent");
+        c.Check(ButtonShown(p, "Download Animation GLB") && (bool)PluginDriver.Prop(((IList)p.Get("current3DAnimations"))[0], "Mirror")!, "a mirrored result is not read as mirrored");
+
+        p.Set("model3DAnimateSource", "my_animation");
+        p.Gui();
+        c.Require(p.RunUntilIdle(20), "My Animations never loaded");
+        p.Gui();
+        p.Click("Animate 3D Model");
+        c.Require(p.RunUntilIdle(20), "My Animation retarget never finished");
+        body = LastBody(c, "/assets/3d-model/animate-preset");
+        c.Check((string)body?["animation_id"] == "6a1f00000000000000000000mine" && body?["preset_id"] == null && body?["mirror"]?.GetValue<bool>() == true, $"My Animation retarget body ({body})");
+        p.Set("model3DAnimateMirror", false);
+        p.Click("Animate 3D Model");
+        c.Require(p.RunUntilIdle(20), "unmirrored My Animation retarget never finished");
+        c.Check(LastBody(c, "/assets/3d-model/animate-preset")?["mirror"] == null, "mirror sent while off");
+
+        // the result goes on to Directional Sprites like any other clip
+        p.Click("Use for Directional Sprites");
+        c.Check(p.Get<string>("directionalAnimationSource") == "animation" && (p.Get<string>("directionalAnimationUrl") ?? "").EndsWith("-retarget.glb"), "the retargeted GLB did not reach Directional Sprites");
+
+        // the text description path is unchanged
+        Tab(p, "Models", "currentModelTab", "Animate");
+        p.Set("model3DAnimateSource", "prompt");
+        p.Set("model3DAnimateNumVariants", 1);
+        p.Click("Animate 3D Model");
+        c.Require(p.RunUntilIdle(20), "text animation never finished");
+        c.Check(LastBody(c, "/assets/3d-model/animate")?["prompt"] != null, "text animation no longer reaches /assets/3d-model/animate");
+        c.CheckClean(p);
+    }
+
+    // Animate Sprite from an Animation Clip or one of My Animations (transfer-motion).
+    static void AnimateSpriteFromClip(Ctx c)
+    {
+        var p = c.NewPlugin(new FakeLudoApi.Behavior { PollsUntilDone = 1, PollAfterMs = 1 });
+        Tab(p, "Sprites", "currentSpriteTab", "ImageToSpritesheet");
+        p.Set("spritesheetInitialImageUrl", FakeFile(c, "input-knight.webp"));
+        p.Set("spritesheetSource", "preset");
+        p.Set("spritesheetFrameSize", -9); // "Match input frame" is not offered from a clip
+        p.Set("spritesheetMarginMode", "auto");
+        p.Gui();
+        c.Require(p.RunUntilIdle(20), "Animation Clips never loaded");
+        p.Gui();
+        p.Set("spritesheetClipPerspective", "isometric");
+        p.Set("spritesheetClipDirection", "SW");
+        p.Set("spritesheetClipPrompt", "keep the cape still");
+        p.Set("spritesheetGif", true);
+        p.Click("Animate Sprite");
+        c.Require(p.RunUntilIdle(20), "clip animation never finished: " + p.Status);
+        var body = LastBody(c, "/assets/sprite/transfer-motion");
+        c.Require(body != null, "Animate Sprite from a clip did not call transfer-motion");
+        c.Check((string)body["preset_id"] == "walk_relaxed" && (string)body["perspective"] == "isometric" && (string)body["direction"] == "SW", $"clip / view not sent ({body})");
+        c.Check((string)body["image"] == FakeFile(c, "input-knight.webp") && (string)body["prompt"] == "keep the cape still", $"image / extra instructions ({body})");
+        c.Check((string)body["margin_ratio_mode"] == "manual" && body["frame_size"]!.GetValue<double>() == 256, $"clip margins / frame size ({body})");
+        c.Check(body["mirror"] == null && body["animation_id"] == null, $"clip: mirror or animation_id sent ({body})");
+        c.Check(c.Api.Posts("/api/assets/sprite/animate").Count == 0, "a clip went to the text animation endpoint");
+        c.Require(p.Get("currentSpritesheet") != null, "no spritesheet from a clip");
+        ClickSave(c, p, "Save Spritesheet", "image");
+        ClickSave(c, p, "Save GIF Preview", "gif");
+
+        p.Set("spritesheetMirror", true);
+        p.Click("Animate Sprite");
+        c.Require(p.RunUntilIdle(20), "mirrored clip animation never finished");
+        c.Check(LastBody(c, "/assets/sprite/transfer-motion")?["mirror"]?.GetValue<bool>() == true, "clip: mirror not sent");
+
+        // My Animation: generated here, then played on the sprite
+        p.Set("spritesheetSource", "my_animation");
+        p.Gui();
+        c.Require(p.RunUntilIdle(20), "My Animations never loaded");
+        p.Gui();
+        c.Check(!ButtonEnabled(p, "Animate Sprite"), "Animate Sprite enabled with no animation of my own");
+        p.Set("newAnimationPrompt", "jumps and lands in a crouch");
+        p.Click("Generate Animation (0.5 credits)");
+        c.Require(p.RunUntilIdle(20), "Generate Animation never finished");
+        string made = p.Get<string>("spritesheetMyAnimationId");
+        c.Require(!string.IsNullOrEmpty(made), "the generated animation was not picked");
+        p.Set("transferModel", "forge");
+        p.Set("transferDuration", 1.5f);
+        p.Click("Animate Sprite");
+        c.Require(p.RunUntilIdle(20), "My Animation sprite never finished");
+        body = LastBody(c, "/assets/sprite/transfer-motion");
+        c.Check((string)body?["animation_id"] == made && body?["preset_id"] == null && body?["mirror"]?.GetValue<bool>() == true && (string)body?["model"] == "forge", $"My Animation body ({body})");
+        p.Set("spritesheetMirror", false);
+        p.Click("Animate Sprite");
+        c.Require(p.RunUntilIdle(20), "unmirrored My Animation sprite never finished");
+        c.Check(LastBody(c, "/assets/sprite/transfer-motion")?["mirror"] == null, "mirror sent while off");
+
+        // and the text description path is unchanged (its own model, frame size and margins)
+        p.Set("spritesheetSource", "prompt");
+        p.Click("Animate Sprite");
+        c.Require(p.RunUntilIdle(20), "text animation never finished");
+        body = LastBody(c, "/assets/sprite/animate");
+        c.Check(body != null && (string)body["margin_ratio_mode"] == "auto" && body["mirror"] == null, $"text animation changed by the clip settings ({body})");
+        c.CheckClean(p);
+    }
+
+    // The validation paths: an animation deleted in the web app (404), the rules the fake
+    // holds the plugin to, and My Animations that cannot be read.
+    static void AnimationValidation(Ctx c)
+    {
+        var p = DirectionalPlugin(c, new FakeLudoApi.Behavior { PollsUntilDone = 1, PollAfterMs = 1, MyAnimations = new() { Animation("6a1f00000000000000000000gone", "spin", "spin") } });
+        p.Set("directionalModelInput", FakeFile(c, "rigged.glb"));
+        p.Set("directionalAnimationSource", "my_animation");
+        p.Gui();
+        c.Require(p.RunUntilIdle(20), "My Animations never loaded");
+        p.Gui();
+        // both ids in the plugin's state: only the chosen source's goes out
+        p.Set("directionalPresetId", "walk_relaxed");
+        lock (c.Api.Animations) c.Api.Animations.Clear(); // deleted in the web app since the list loaded
+        p.Click("Render Spritesheets (1 credit)");
+        c.Require(p.RunUntilIdle(20), "stuck after a 404");
+        var body = LastBody(c, "/assets/sprite/directional");
+        c.Check(body?["preset_id"] == null && (string)body?["animation_id"] == "6a1f00000000000000000000gone", $"sent more than the chosen animation ({body})");
+        c.Check(p.ErrorDialogs.Any(d => d.Message.Contains("Animation not found") && d.Message.Contains("404")), $"404 not shown; dialogs: {string.Join(" / ", p.Dialogs)}");
+        c.Check(p.Get("directionalSheets") == null, "a failed render left sheets behind");
+        p.Click("Refresh My Animations");
+        c.Require(p.RunUntilIdle(20), "refresh never finished");
+        p.Gui();
+        c.Check(PluginDriver.Count(p.Get("myAnimations")) == 0 && !ButtonEnabled(p, "Render Spritesheets (1 credit)"), "after a refresh the deleted animation can still be rendered");
+
+        // the fake answers what the backend answers (so the scenarios above mean something)
+        using (var http = new HttpClient())
+        {
+            int Post(string path, string json)
+            {
+                var req = new HttpRequestMessage(HttpMethod.Post, c.ApiUrl + path) { Content = new StringContent(json, System.Text.Encoding.UTF8, "application/json") };
+                req.Headers.TryAddWithoutValidation("Authorization", "ApiKey " + c.ApiKey);
+                req.Headers.TryAddWithoutValidation("x-ludo-tool", "unity");
+                return (int)http.Send(req).StatusCode;
+            }
+            lock (c.Api.Animations) c.Api.Animations.Add(Animation("6a1f00000000000000000000real", "spin", "spin"));
+            c.Check(Post("/assets/sprite/directional-preview", "{\"model\":\"m.glb\",\"preset_id\":\"walk_relaxed\",\"animation_id\":\"6a1f00000000000000000000real\"}") == 400, "fake: preset_id + animation_id is not a 400");
+            c.Check(Post("/assets/sprite/directional", "{\"model\":\"m.glb\",\"model_animation\":\"Walk\",\"mirror\":true}") == 400, "fake: mirror without a clip or animation is not a 400");
+            c.Check(Post("/assets/3d-model/animate-preset", "{\"model\":\"m.glb\"}") == 400, "fake: animate-preset with neither id is not a 400");
+            c.Check(Post("/assets/3d-model/animate-preset", "{\"model\":\"m.glb\",\"preset_id\":\"a\",\"animation_id\":\"6a1f00000000000000000000real\"}") == 400, "fake: animate-preset with both ids is not a 400");
+            c.Check(Post("/assets/sprite/transfer-motion", "{\"image\":\"i.png\",\"preset_id\":\"walk_relaxed\"}") == 400, "fake: a clip without a view is not a 400");
+            c.Check(Post("/assets/sprite/transfer-motion", "{\"image\":\"i.png\",\"animation_id\":\"6a1f00000000000000000000nope\",\"perspective\":\"low\",\"direction\":\"S\"}") == 404, "fake: someone else's animation is not a 404");
+            c.Check(Post("/assets/animation", "{\"prompt\":\"spin\",\"augment_prompt\":false}") == 400, "fake: augment_prompt false without duration is not a 400");
+        }
+
+        // My Animations cannot be read: a message and a retry
+        var q = DirectionalPlugin(c, new FakeLudoApi.Behavior { AnimationsStatus = 503 });
+        q.Set("directionalAnimationSource", "my_animation");
+        q.Gui();
+        c.Require(q.RunUntilIdle(20), "My Animations request never finished");
+        q.Gui();
+        c.Check(q.Get("myAnimationsError") != null && ButtonShown(q, "Retry Loading My Animations"), "no message / retry when My Animations fail");
+        c.Api.B.AnimationsStatus = 200;
+        q.Click("Retry Loading My Animations");
+        q.Gui();
+        c.Require(q.RunUntilIdle(20), "My Animations retry never finished");
+        c.Check(q.Get("myAnimations") != null, "retry did not load My Animations");
+    }
+
     // ---------------------------------------------------------------- Upscale Image
 
     static void Upscale(Ctx c)
@@ -854,6 +1109,12 @@ public static class Scenarios
         ("directionalPerspectiveOptions", "/assets/sprite/directional-stills", "perspective"),
         ("directionalPerspectiveOptions", "/assets/sprite/directional-preview", "perspective"),
         ("directionalDirectionOptions", "/assets/sprite/directional", "directions"),
+        ("transferModelOptions", "/assets/sprite/transfer-motion", "model"),
+        ("transferFrameSizeOptions", "/assets/sprite/transfer-motion", "frame_size"),
+        ("transferMarginModeOptions", "/assets/sprite/transfer-motion", "margin_ratio_mode"),
+        ("frameOptions", "/assets/sprite/transfer-motion", "frames"),
+        ("directionalPerspectiveOptions", "/assets/sprite/transfer-motion", "perspective"),
+        ("directionalDirectionOptions", "/assets/sprite/transfer-motion", "direction"),
         ("model3DRigTypeOptions", "/assets/3d-model/rig", "rig_type"),
         ("model3DJointNamingOptions", "/assets/3d-model/rig", "joint_naming"),
         ("model3DAnimateModeOptions", "/assets/3d-model/animate", "mode"),
@@ -985,6 +1246,10 @@ public static class Scenarios
         new("generate", "3D: prop/hero model choice, rig on create", Model3DHeroRig),
         new("generate", "directional sprites: styles, preset, preview, sheets, stills, saves", Directional),
         new("generate", "directional sprites: animation sources and hand-offs", DirectionalSources),
+        new("generate", "my animations: generate, pick, mirror on directional sprites", MyAnimationsDirectional),
+        new("generate", "my animations: animation clips and my animations on animate 3D", AnimationClips3D),
+        new("generate", "my animations: animate sprite from a clip or my animation", AnimateSpriteFromClip),
+        new("failure", "my animations: deleted animation, one source, list unavailable", AnimationValidation),
         new("failure", "directional preview replaced by a newer one (204)", DirectionalPreviewSuperseded),
         new("failure", "directional styles unavailable: message and retry", DirectionalStylesUnavailable),
         new("generate", "upscale image: from a card, from the project, size limit", Upscale),

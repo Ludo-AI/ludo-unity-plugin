@@ -9,9 +9,13 @@
 
 ## What's New in 1.0.7
 
+- **My Animations**: generate an animation from a short description (**Generate Animation**, 0.5 credits) and use it on any humanoid character. Your animations, including the ones made in the Ludo web app, are listed under **My Animation** in **Directional Sprites**, **Animate 3D** and **Animate Sprite**, next to the **Animation Clips** (what the plugin called animation presets).
+- **Mirror**: play an Animation Clip or one of My Animations on the other side, left and right swapped, in all three tools.
+- **Animate 3D** can retarget an Animation Clip or one of My Animations onto a rigged model (0.5 credits), as well as animate from a text prompt.
+- **Animate Sprite** can play an Animation Clip or one of My Animations on a sprite, seen from the camera view the sprite is drawn from, as well as animate from a text description.
 - **Art styles renamed to match Ludo**: the pixel-art styles are now **Micro Pixel**, **8-Bit Pixel**, **16-Bit Pixel**, **32-Bit Pixel** and **Free Pixel**, and Anime/Manga is **Anime**. The new names keep the old looks, though not always under the same-sounding name: the old 8-Bit is Micro Pixel, 16-Bit is 8-Bit Pixel, 32-Bit is 16-Bit Pixel, Hi-Bit is 32-Bit Pixel and Retro 2D is Free Pixel. A style chosen in an open window before the update moves to its new name.
 - **Griffin for sprite animation**: the highest-resolution model, with the best image fidelity. 10 credits per animation, always 5 seconds. The model notes now match Ludo's own.
-- **Directional Sprites: the Trim to Loop choice is gone.** Ludo now trims an animation preset by the preset's own loop flag and no longer takes a trim setting, so the plugin stops offering and sending it. Keep Ground Travel, Keep Vertical Motion and Seamless Loop work as before.
+- **Directional Sprites: the Trim to Loop choice is gone.** Ludo now trims an Animation Clip by its own loop flag and no longer takes a trim setting, so the plugin stops offering and sending it. Keep Ground Travel, Keep Vertical Motion and Seamless Loop work as before.
 
 ## What's New in 1.0.6
 
@@ -221,9 +225,9 @@ Turn static sprites into animated spritesheets.
 
 1. **Select Image**: Choose from previously generated images or enter URL
 
-2. **Motion Description**: Describe the animation
-   - Example: "walking animation cycle"
-   - Example: "idle breathing animation"
+2. **Animation**: **Text Description** (the default), an **Animation Clip** or **My Animation**
+   - **Text Description**: describe the animation, e.g. "walking animation cycle", "idle breathing animation"
+   - **Animation Clip** or **My Animation**: the move is played on your sprite. Pick the **Camera Height** and **Camera Direction** your sprite is drawn from, add **Extra Instructions** if you like ("keep the cape still") and turn on **Mirror** to swap left and right. Models here are Hydra (3 credits/s), Forge and Forge Pixel (2 credits/s); there is no Auto margin, AI upscale or Match input frame. See **My Animations** below
 
 3. **Configure Frames**:
    - **Frame Count**: 4, 9, 16, 25, 36, 49, or 64 frames
@@ -330,10 +334,18 @@ Add a skeleton and skin weights so the mesh can be animated.
    - `game` — classic game-character rigs
    - `humanoid_template` / `humanoid_template_hands` — pinned templates with named joints, for two-armed, two-legged characters only
 
-   Animation presets retarget onto any rig type, though not onto every model.
+   Animation Clips retarget onto any rig type, though not onto every model.
 4. Choose **Joint Naming** (default **`mixamo`** — works well with Unity Humanoid auto-mapping)
 5. Click **Rig Model** (can take several minutes)
 6. **Download Rigged Model**, or click **Use for Animation** or **Use for Directional Sprites** to continue
+
+### My Animations
+
+Your own animations, made from a short description and kept on your Ludo account (they do not expire, and the ones you make in the Ludo web app are listed too). They are humanoid moves: any rigged two-armed, two-legged character can play them, from any view. **Directional Sprites**, **Animate 3D** and **Animate Sprite** all offer them next to the **Animation Clips**: choose **My Animation** as the animation.
+
+1. Choose **My Animation**; your animations load, newest first. **Watch Animation Preview** opens the move on a mannequin; **Refresh My Animations** reloads the list
+2. To make a new one, describe the move under **Generate Animation** (e.g. "overhead sword slash", "zombie walk"), pick 1 to 4 **Variations** and click **Generate Animation** (0.5 credits each). It is saved to My Animations and picked for you
+3. **Mirror** plays the move on the other side, left and right swapped. Use it when the animation's weapon hand is not your character's
 
 ### Animate 3D (BETA)
 
@@ -343,8 +355,10 @@ Generate text-driven skeletal animation candidates for a **rigged** GLB.
 
 1. Open the **Animate 3D** subtab
 2. Provide a rigged GLB via **Use Rigged Model**, project select, or URL
-3. Enter a **Motion Prompt** (e.g. `walking`, `swinging its axe`)
-4. Options:
+3. Pick the **Animation**: **Text Description**, an **Animation Clip** or **My Animation**
+   - **Text Description**: enter a **Motion Prompt** (e.g. `walking`, `swinging its axe`) and the options below
+   - **Animation Clip** or **My Animation**: retargets that animation onto the model, with **Mirror** to swap left and right. One animation GLB comes back (0.5 credits); one that loops is trimmed to its loop and plays on the spot
+4. Options (Text Description):
    - **Mode**: Rotation + Translation (default) or Rotation Only (retargeting)
    - **Variants**: 1–8 candidates (default 4)
    - **Loop Animation** / **Augment Prompt**
@@ -366,7 +380,9 @@ Render a 3D model into one spritesheet per direction, in a 2D style. Every direc
 3. Pick the **Animation**:
    - **None** - the rest pose, one frame per direction
    - **Animation GLB** - a clip from **Animate 3D**, made for this model's skeleton
-   - **Animation preset** - one of 600+ presets (walks, runs, attacks, idles, dances...), by category; any rig type can take one, though retargeting does not succeed on every model (when it does not, the render returns an error). Ludo trims a preset by its own loop flag
+   - **Animation Clip** - one of 600+ Animation Clips (walks, runs, attacks, idles, dances...), by category; any rig type can take one, though retargeting does not succeed on every model (when it does not, the render returns an error). Ludo trims a clip by its own loop flag
+   - **My Animation** - one of your own animations (see **My Animations** below)
+   - **Mirror** (Animation Clip or My Animation) plays the move on the other side, left and right swapped
    - **Animation inside the GLB** - the name of a clip the file already carries
    - **Keep Ground Travel** (off by default keeps the character in place) and **Keep Vertical Motion** (jumps, bobbing)
 4. Pick the **Perspective** (camera height, from Horizon to Top) and the **Directions** (where the camera stands around a character facing S; **All 8** or any subset)
