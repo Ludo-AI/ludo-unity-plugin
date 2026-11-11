@@ -63,7 +63,7 @@ public class FakeLudoApi : IDisposable
         "/audio/speech", "/audio/speech-preset",
         "/assets/sprite/directional", "/assets/sprite/directional-stills", "/assets/image/upscale",
         "/assets/animation", "/assets/3d-model/animate-preset", "/assets/sprite/transfer-motion",
-        "/assets/image/edit",
+        "/assets/image/edit", "/assets/image/normal-map",
     };
 
     // Free synchronous POSTs: validated like the rest, answered at once, never a job.
@@ -611,6 +611,8 @@ public class FakeLudoApi : IDisposable
                     stills.Add(still);
                 }
                 return new JsonObject { ["images"] = stills };
+            case "/assets/image/normal-map":
+                return new JsonObject { ["url"] = (string)b["image"] is string src && src.StartsWith("http") ? src : F($"{job.Id}-source.png"), ["normal_map_url"] = F($"{job.Id}-normal.webp") };
             case "/assets/image/upscale":
                 return new JsonObject { ["url"] = F($"{job.Id}-upscaled.png"), ["request_id"] = (string)b["request_id"], ["created_at"] = now };
             case "/assets/3d-model/rig":

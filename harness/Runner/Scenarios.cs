@@ -1049,6 +1049,39 @@ public static class Scenarios
         c.Check(p.ErrorDialogs.Any(d => d.Message.Contains("pixel_size")), $"no-grid 400 not shown; dialogs: {string.Join(" / ", p.Dialogs)}");
     }
 
+    static void NormalMapMode(Ctx c)
+    {
+        var p = c.NewPlugin(new FakeLudoApi.Behavior { PollsUntilDone = 1, PollAfterMs = 1 });
+        Tab(p, "Sprites", "currentSpriteTab", "Image");
+        p.Set("imagePrompt", "a brick wall tile");
+        p.Click("Generate Image(s)");
+        c.Require(p.RunUntilIdle(20), "image generation never finished");
+        string url = (string)PluginDriver.Prop(((IList)p.Get("generatedImages"))[0], "Url");
+        p.Click("Edit");
+        p.Set("editMode", "normal_map");
+        p.Click("Generate Normal Map (free)");
+        c.Require(p.RunUntilIdle(20), "normal map never finished: " + p.Status);
+        var body = LastBody(c, "/assets/image/normal-map");
+        c.Check((string)body?["image"] == url && body?.Count == 2, $"normal map body: image (and request_id) only ({body})");
+        var made = p.Get("currentNormalMap");
+        c.Require(made != null && !string.IsNullOrEmpty((string)PluginDriver.Prop(made, "NormalMapUrl")), "no normal map");
+        c.Check(PluginDriver.Count(p.Get("editResults")) == 0, "a normal map showed up as an edited image");
+        string saved = ClickSave(c, p, "Save Normal Map", "png");
+        c.Check(saved != null && Path.GetFileNameWithoutExtension(saved).EndsWith("_normal"), $"the normal map is not named <name>_normal: {Path.GetFileName(saved)}");
+        SaveWithNormal(c, p, "Save Image and Normal Map");
+        c.CheckClean(p, "/assets/image/normal-map");
+
+        // over the rate limit: the API's reason is shown
+        var q = c.NewPlugin(new FakeLudoApi.Behavior { SubmitStatus = 429, SubmitMessage = "Too many requests, please try again later." });
+        Tab(q, "Sprites", "currentSpriteTab", "Edit");
+        q.Set("editImageInput", FakeFile(c, "wall.png"));
+        q.Set("editMode", "normal_map");
+        q.Click("Generate Normal Map (free)");
+        c.Require(q.RunUntilIdle(20), "stuck after a 429");
+        c.Check(q.ErrorDialogs.Any(d => d.Message.Contains("Too many requests")), $"429 not shown; dialogs: {string.Join(" / ", q.Dialogs)}");
+        c.Check(q.Get("currentNormalMap") == null, "a failed map left a result");
+    }
+
     // ---------------------------------------------------------------- Upscale Image
 
     static void Upscale(Ctx c)
@@ -1450,6 +1483,7 @@ public static class Scenarios
         new("generate", "upscale image: from a card, from the project, size limit", Upscale),
         new("generate", "edit image: edit, edit with mask, erase with mask, mask size", EditImageModes),
         new("generate", "edit image: convert to pixel art (synchronous), detect without a grid", PixelArtMode),
+        new("generate", "edit image: generate normal map, save it alone or next to the image", NormalMapMode),
         new("live", "directional sprites + upscale against the live API", DirectionalLive, LiveToo: true),
         new("generate", "audio: sound effect", c => Audio(c, "SoundEffect", "/audio/sound-effect", p => { p.Set("soundEffectDescription", "sword clash"); p.Set("soundEffectDuration", 2f); }, "Generate Sound Effect", "currentSoundEffect", "Save Sound Effect"), LiveToo: true),
         new("generate", "audio: music", c => Audio(c, "Music", "/audio/music", p => p.Set("musicDescription", "calm village theme"), "Generate Music", "currentMusic", "Save Music"), LiveToo: true),

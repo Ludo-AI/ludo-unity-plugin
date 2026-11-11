@@ -240,15 +240,18 @@ public class LudoAIPlugin : EditorWindow
     private int editMaskHeight = 0;
     private List<GeneratedImage> editResults = new List<GeneratedImage>();
     private Vector2 editScrollPosition;
-    private readonly string[] editModeOptions = { "edit", "mask_replace", "mask_erase", "pixel_art" };
-    private readonly string[] editModeLabels = { "Edit Image", "Edit with Mask", "Erase with Mask", "Convert to Pixel Art" };
+    private readonly string[] editModeOptions = { "edit", "mask_replace", "mask_erase", "pixel_art", "normal_map" };
+    private readonly string[] editModeLabels = { "Edit Image", "Edit with Mask", "Erase with Mask", "Convert to Pixel Art", "Generate Normal Map" };
     private readonly string[] editModeHints =
     {
         "Modifications with textual instructions. The whole image is redrawn, so colours and details outside the change can shift. 0.5 credits per result.",
         "Substitute the masked area with new content: only the white part of the mask changes. 1 credit per result.",
         "Remove the selected masked area: what is under the white part of the mask is erased. No prompt. 1 credit per result.",
-        "Turn any image into pixel art, with the pixel size and number of colors you choose. The result is about the size of the image. Free."
+        "Turn any image into pixel art, with the pixel size and number of colors you choose. The result is about the size of the image. Free.",
+        "The normal map of the image, for 2D lighting: the same size and transparency, one normal per art pixel for pixel art, tiling like the image for a seamless tile. Free. For new images and spritesheets, turn on Normal Map when generating them instead."
     };
+    // Generate Normal Map (POST /assets/image/normal-map, free, a job)
+    private GeneratedImage currentNormalMap = null; // Url = the source, NormalMapUrl = its map
     // Convert to Pixel Art (POST /assets/image/pixel-art, free and synchronous)
     private bool pixelArtDetectSize = false;   // use the image's own pixel grid (it must have one)
     private float pixelArtPixelSize = 8f;      // one art pixel, in the image's pixels (at least 2)
@@ -2472,6 +2475,11 @@ public class LudoAIPlugin : EditorWindow
             }
             action = "Convert to Pixel Art (free)";
         }
+        else if (editMode == "normal_map")
+        {
+            GUILayout.Label("It is in the OpenGL convention Unity reads; set its Texture Type to Normal map. Limited to 20 maps per 5 minutes.", EditorStyles.helpBox);
+            action = "Generate Normal Map (free)";
+        }
 
         GUILayout.Space(10);
 
@@ -2483,6 +2491,11 @@ public class LudoAIPlugin : EditorWindow
             {
                 statusMessage = "Converting to pixel art...";
                 EditorCoroutineUtility.StartCoroutineOwnerless(ConvertToPixelArt());
+            }
+            else if (editMode == "normal_map")
+            {
+                statusMessage = "Making the normal map...";
+                EditorCoroutineUtility.StartCoroutineOwnerless(CreateNormalMap());
             }
             else
             {
@@ -2503,6 +2516,27 @@ public class LudoAIPlugin : EditorWindow
 
     private void DrawEditResults()
     {
+        if (currentNormalMap != null && !string.IsNullOrEmpty(currentNormalMap.NormalMapUrl))
+        {
+            GUILayout.Label("Normal Map:", EditorStyles.boldLabel);
+            GUILayout.BeginVertical("box");
+            GUILayout.BeginHorizontal();
+            Texture2D map = RemoteTexture(currentNormalMap.NormalMapUrl);
+            if (map != null) GUILayout.Label(map, GUILayout.Width(100), GUILayout.Height(100));
+            GUILayout.BeginVertical();
+            if (GUILayout.Button("Save Normal Map", GUILayout.Height(25)))
+            {
+                EditorCoroutineUtility.StartCoroutineOwnerless(DownloadAndSaveImageUrl(currentNormalMap.NormalMapUrl, "Save Normal Map", $"Image_{DateTime.Now:yyyyMMdd_HHmmss}{NormalMapSuffix}", "Normal map"));
+            }
+            if (GUILayout.Button("Save Image and Normal Map", GUILayout.Height(25)))
+            {
+                SaveImageToFile(currentNormalMap);
+            }
+            GUILayout.EndVertical();
+            GUILayout.EndHorizontal();
+            GUILayout.EndVertical();
+        }
+
         if (currentPixelArt != null && !string.IsNullOrEmpty(currentPixelArt.Url))
         {
             GUILayout.Label("Pixel Art:", EditorStyles.boldLabel);
@@ -2606,6 +2640,44 @@ public class LudoAIPlugin : EditorWindow
             statusMessage = $"Error reading the edited images: {e.Message}";
             Debug.LogError($"[LudoAIPlugin] {statusMessage}");
             EditorUtility.DisplayDialog("Edit Image Error", statusMessage, "OK");
+        }
+        isProcessing = false;
+    }
+
+    private IEnumerator CreateNormalMap()
+    {
+        var payload = new Dictionary<string, object> { ["image"] = editImageInput };
+        var job = new EditorHttpResult();
+        yield return RunApiJob("/assets/image/normal-map", payload, "Making the normal map", job);
+
+        if (!job.Success)
+        {
+            statusMessage = FormatEditorHttpError("making the normal map", job);
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog("Generate Normal Map Error", statusMessage, "OK");
+            isProcessing = false;
+            yield break;
+        }
+        try
+        {
+            // { url: the source, normal_map_url }: the same shape as an image with its map.
+            var made = JsonConvert.DeserializeObject<GeneratedImage>(job.Body);
+            if (made != null && !string.IsNullOrEmpty(made.NormalMapUrl))
+            {
+                if (string.IsNullOrEmpty(made.Url)) made.Url = editImageInput;
+                currentNormalMap = made;
+                statusMessage = "Normal map ready. Save it, or save the image with its map next to it.";
+            }
+            else
+            {
+                statusMessage = "The normal map could not be made. Please try again.";
+                EditorUtility.DisplayDialog("Generate Normal Map Error", statusMessage, "OK");
+            }
+        }
+        catch (Exception e)
+        {
+            statusMessage = $"Error reading the normal map: {e.Message}";
+            EditorUtility.DisplayDialog("Generate Normal Map Error", statusMessage, "OK");
         }
         isProcessing = false;
     }
