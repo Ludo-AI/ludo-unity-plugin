@@ -186,6 +186,16 @@ public class LudoAIPlugin : EditorWindow
     private string directionalStylesError = null;
     private string directionalMyAnimationId = "";
     private bool directionalMirror = false;
+    private bool directionalSaveNormals = false;
+
+    // Normal maps (save_normals): made with the asset, saved next to it as <name>_normal.png.
+    private bool imageSaveNormals = false;
+    private bool spritesheetSaveNormals = false;
+    // use_pixel_grid: true (the API's default) packs a sheet on a detected pixel grid.
+    private bool spritesheetUsePixelGrid = true;
+    private bool soundEffectLoop = false;
+    private bool musicLoop = false;
+    private const string NormalMapSuffix = "_normal";
     // Animation Clips (Ludo's ready-made animations, "presets" in the API), shared by every tool.
     private List<AnimationPreset> animationPresets = null;
     private bool animationPresetsLoading = false;
@@ -1273,17 +1283,24 @@ public class LudoAIPlugin : EditorWindow
             directionalLoop = triStateOptions[loopIndex];
         }
         directionalGif = EditorGUILayout.Toggle("Also Return GIFs", directionalGif);
+        directionalSaveNormals = EditorGUILayout.Toggle("Normal Maps", directionalSaveNormals);
+        if (directionalSaveNormals)
+        {
+            GUILayout.Label(NormalMapHint("The model's own surface normals, 0.5 credits per spritesheet, free with stills."), EditorStyles.helpBox);
+        }
 
         GUI.enabled = ready;
         int count = directionalDirections.Count;
-        if (GUILayout.Button($"Render Spritesheets ({count} credit{(count == 1 ? "" : "s")})", GUILayout.Height(30)))
+        float sheetCost = count * (directionalSaveNormals ? 1.5f : 1f);
+        string sheetCredits = sheetCost.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + (sheetCost == 1f ? " credit" : " credits");
+        if (GUILayout.Button($"Render Spritesheets ({sheetCredits})", GUILayout.Height(30)))
         {
             isProcessing = true;
             statusMessage = "Rendering spritesheets...";
             EditorCoroutineUtility.StartCoroutineOwnerless(CreateDirectionalSprites());
         }
         GUI.enabled = !isProcessing && !string.IsNullOrEmpty(directionalModelInput) && directionalDirections.Count > 0;
-        if (GUILayout.Button($"Render Stills ({(count * 0.5f).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} credits)", GUILayout.Height(26)))
+        if (GUILayout.Button($"Render Stills ({(count * 0.5f).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} credit{(count == 2 ? "" : "s")})", GUILayout.Height(26)))
         {
             isProcessing = true;
             statusMessage = "Rendering stills...";
@@ -1755,7 +1772,9 @@ public class LudoAIPlugin : EditorWindow
             {
                 urls.Add(new KeyValuePair<string, string>(sheet.SpritesheetUrl, $"Directional_{sheet.Direction}"));
             }
-            EditorCoroutineUtility.StartCoroutineOwnerless(DownloadImagesToFolder(urls, "Save Spritesheets", "spritesheet"));
+            var normals = new Dictionary<string, string>();
+            foreach (var sheet in directionalSheets) if (!string.IsNullOrEmpty(sheet.SpritesheetUrl) && !string.IsNullOrEmpty(sheet.NormalMapUrl)) normals[sheet.SpritesheetUrl] = sheet.NormalMapUrl;
+            EditorCoroutineUtility.StartCoroutineOwnerless(DownloadImagesToFolder(urls, "Save Spritesheets", "spritesheet", normals));
         }
 
         foreach (var sheet in directionalSheets)
@@ -1766,11 +1785,11 @@ public class LudoAIPlugin : EditorWindow
             if (texture != null) GUILayout.Label(texture, GUILayout.Width(128), GUILayout.Height(128));
             GUILayout.BeginVertical();
             GUILayout.Label($"Direction {sheet.Direction}", EditorStyles.boldLabel);
-            GUILayout.Label($"{sheet.NumFrames} frames in a {sheet.NumCols}x{sheet.NumRows} grid, {sheet.Fps:0.##} fps", EditorStyles.miniLabel);
+            GUILayout.Label($"{sheet.NumFrames} frames in a {sheet.NumCols}x{sheet.NumRows} grid, {sheet.Fps:0.##} fps{(string.IsNullOrEmpty(sheet.NormalMapUrl) ? "" : ", with normal map")}", EditorStyles.miniLabel);
             GUI.enabled = !string.IsNullOrEmpty(sheet.SpritesheetUrl);
             if (GUILayout.Button("Save Spritesheet", GUILayout.Height(24)))
             {
-                EditorCoroutineUtility.StartCoroutineOwnerless(DownloadAndSaveImageUrl(sheet.SpritesheetUrl, "Save Spritesheet", $"Directional_{sheet.Direction}_{DateTime.Now:yyyyMMdd_HHmmss}", "Spritesheet"));
+                EditorCoroutineUtility.StartCoroutineOwnerless(DownloadAndSaveImageUrl(sheet.SpritesheetUrl, "Save Spritesheet", $"Directional_{sheet.Direction}_{DateTime.Now:yyyyMMdd_HHmmss}", "Spritesheet", sheet.NormalMapUrl));
             }
             GUI.enabled = true;
             if (!string.IsNullOrEmpty(sheet.GifUrl) && GUILayout.Button("Save GIF", GUILayout.Height(24)))
@@ -1797,7 +1816,9 @@ public class LudoAIPlugin : EditorWindow
             {
                 urls.Add(new KeyValuePair<string, string>(still.Url, $"DirectionalStill_{still.Direction}"));
             }
-            EditorCoroutineUtility.StartCoroutineOwnerless(DownloadImagesToFolder(urls, "Save Stills", "still"));
+            var normals = new Dictionary<string, string>();
+            foreach (var still in directionalStills) if (!string.IsNullOrEmpty(still.Url) && !string.IsNullOrEmpty(still.NormalMapUrl)) normals[still.Url] = still.NormalMapUrl;
+            EditorCoroutineUtility.StartCoroutineOwnerless(DownloadImagesToFolder(urls, "Save Stills", "still", normals));
         }
 
         foreach (var still in directionalStills)
@@ -1812,7 +1833,7 @@ public class LudoAIPlugin : EditorWindow
             GUI.enabled = !string.IsNullOrEmpty(still.Url);
             if (GUILayout.Button("Save Still", GUILayout.Height(24)))
             {
-                EditorCoroutineUtility.StartCoroutineOwnerless(DownloadAndSaveImageUrl(still.Url, "Save Still", $"DirectionalStill_{still.Direction}_{DateTime.Now:yyyyMMdd_HHmmss}", "Still"));
+                EditorCoroutineUtility.StartCoroutineOwnerless(DownloadAndSaveImageUrl(still.Url, "Save Still", $"DirectionalStill_{still.Direction}_{DateTime.Now:yyyyMMdd_HHmmss}", "Still", still.NormalMapUrl));
             }
             if (GUILayout.Button("Animate This Still", GUILayout.Height(24)))
             {
@@ -2006,6 +2027,7 @@ public class LudoAIPlugin : EditorWindow
             if (directionalLoop != "default") payload["loop"] = directionalLoop == "on";
         }
         if (directionalGif) payload["gif"] = true;
+        if (directionalSaveNormals) payload["save_normals"] = true;
 
         var job = new EditorHttpResult();
         yield return RunApiJob("/assets/sprite/directional", payload, "Rendering spritesheets", job);
@@ -2045,6 +2067,7 @@ public class LudoAIPlugin : EditorWindow
     private IEnumerator CreateDirectionalStills()
     {
         var payload = DirectionalPayload(false);
+        if (directionalSaveNormals) payload["save_normals"] = true;
 
         var job = new EditorHttpResult();
         yield return RunApiJob("/assets/sprite/directional-stills", payload, "Rendering stills", job);
@@ -2302,8 +2325,9 @@ public class LudoAIPlugin : EditorWindow
     }
 
     // Downloads an image result and saves it as PNG (Unity does not import WebP).
-    private IEnumerator DownloadAndSaveImageUrl(string url, string dialogTitle, string baseName, string what)
+    private IEnumerator DownloadAndSaveImageUrl(string url, string dialogTitle, string baseName, string what, string normalMapUrl = null)
     {
+        string savedPath = null;
         UnityWebRequest www = UnityWebRequest.Get(url);
         www.SetRequestHeader("x-ludo-tool", "unity");
         yield return www.SendWebRequest();
@@ -2325,7 +2349,8 @@ public class LudoAIPlugin : EditorWindow
                 File.WriteAllBytes(savePath, data);
                 if (savePath.StartsWith(Application.dataPath)) AssetDatabase.Refresh();
                 Debug.Log($"[LudoAIPlugin] {what} saved to: {savePath}");
-                EditorUtility.DisplayDialog("Success", $"{what} saved successfully to:\n{savePath}", "OK");
+                savedPath = savePath;
+                EditorUtility.DisplayDialog("Success", $"{what} saved successfully to:\n{savePath}{NormalMapNote(normalMapUrl, savePath)}", "OK");
             }
         }
         catch (Exception e)
@@ -2333,10 +2358,59 @@ public class LudoAIPlugin : EditorWindow
             Debug.LogError($"[LudoAIPlugin] Failed to save {what}: {e.Message}");
             EditorUtility.DisplayDialog("Save Error", $"Failed to save {what}: {e.Message}", "OK");
         }
+        if (savedPath != null) yield return SaveNormalMapNextTo(normalMapUrl, savedPath);
+    }
+
+    // The normal map of a saved file goes next to it, as <name>_normal.png.
+    private static string NormalMapPath(string savedPath, string extension)
+    {
+        return Path.Combine(Path.GetDirectoryName(savedPath) ?? "", Path.GetFileNameWithoutExtension(savedPath) + NormalMapSuffix + "." + extension);
+    }
+
+    private static string NormalMapNote(string normalMapUrl, string savedPath)
+    {
+        return string.IsNullOrEmpty(normalMapUrl) ? "" : $"\nIts normal map goes next to it: {Path.GetFileName(NormalMapPath(savedPath, "png"))}";
+    }
+
+    private static string NormalMapHint(string cost)
+    {
+        return "A normal map for 2D lighting, saved next to the file as <name>_normal.png. It is in the OpenGL convention Unity reads; set its Texture Type to Normal map. " + cost;
+    }
+
+    // Downloads a normal map and writes it (as PNG) next to the file saved at `savedPath`.
+    private IEnumerator SaveNormalMapNextTo(string normalMapUrl, string savedPath)
+    {
+        if (string.IsNullOrEmpty(normalMapUrl) || string.IsNullOrEmpty(savedPath)) yield break;
+        UnityWebRequest www = UnityWebRequest.Get(normalMapUrl);
+        www.SetRequestHeader("x-ludo-tool", "unity");
+        www.timeout = 300;
+        yield return www.SendWebRequest();
+
+        if (www.result != UnityWebRequest.Result.Success)
+        {
+            Debug.LogError($"[LudoAIPlugin] Failed to download the normal map: {www.error}");
+            EditorUtility.DisplayDialog("Download Error", $"The file was saved, but its normal map could not be downloaded: {www.error}", "OK");
+            yield break;
+        }
+        try
+        {
+            string extension;
+            byte[] data = ConvertImageForUnity(www.downloadHandler.data, normalMapUrl, out extension);
+            string path = NormalMapPath(savedPath, extension);
+            File.WriteAllBytes(path, data);
+            if (path.StartsWith(Application.dataPath) || path.Replace('\\', '/').Contains("/Assets")) AssetDatabase.Refresh();
+            Debug.Log($"[LudoAIPlugin] Normal map saved to: {path}");
+        }
+        catch (Exception e)
+        {
+            Debug.LogError($"[LudoAIPlugin] Failed to save the normal map: {e.Message}");
+            EditorUtility.DisplayDialog("Save Error", $"Failed to save the normal map: {e.Message}", "OK");
+        }
     }
 
     // Saves each (url, base name) as PNG into one folder the user picks.
-    private IEnumerator DownloadImagesToFolder(List<KeyValuePair<string, string>> items, string dialogTitle, string what)
+    // `normals` (optional): file url -> its normal map url, saved next to it.
+    private IEnumerator DownloadImagesToFolder(List<KeyValuePair<string, string>> items, string dialogTitle, string what, Dictionary<string, string> normals = null)
     {
         string folderPath = EditorUtility.SaveFolderPanel(dialogTitle, "Assets", "DirectionalSprites");
         if (string.IsNullOrEmpty(folderPath)) yield break;
@@ -2357,16 +2431,23 @@ public class LudoAIPlugin : EditorWindow
                 Debug.LogError($"[LudoAIPlugin] Failed to download {what} {i + 1}: {www.error}");
                 continue;
             }
+            string written = null;
             try
             {
                 string extension;
                 byte[] data = ConvertImageForUnity(www.downloadHandler.data, items[i].Key, out extension);
-                File.WriteAllBytes(Path.Combine(folderPath, $"{SanitizeFileName(items[i].Value)}_{stamp}.{extension}"), data);
+                written = Path.Combine(folderPath, $"{SanitizeFileName(items[i].Value)}_{stamp}.{extension}");
+                File.WriteAllBytes(written, data);
                 saved++;
             }
             catch (Exception e)
             {
                 Debug.LogError($"[LudoAIPlugin] Failed to save {what} {i + 1}: {e.Message}");
+            }
+            string normal;
+            if (written != null && normals != null && normals.TryGetValue(items[i].Key, out normal))
+            {
+                yield return SaveNormalMapNextTo(normal, written);
             }
         }
 
@@ -2476,6 +2557,11 @@ public class LudoAIPlugin : EditorWindow
         GUILayout.Space(10);
 
         imageAugmentPrompt = EditorGUILayout.Toggle("Augment Prompt", imageAugmentPrompt);
+        imageSaveNormals = EditorGUILayout.Toggle("Normal Map", imageSaveNormals);
+        if (imageSaveNormals)
+        {
+            GUILayout.Label(NormalMapHint("Free."), EditorStyles.helpBox);
+        }
 
         GUILayout.Space(10);
 
@@ -2519,6 +2605,7 @@ public class LudoAIPlugin : EditorWindow
 
                 GUILayout.BeginVertical();
                 GUILayout.Label($"Size: {image.Width}x{image.Height}", EditorStyles.miniLabel);
+                if (!string.IsNullOrEmpty(image.NormalMapUrl)) GUILayout.Label("With normal map (saved next to it)", EditorStyles.miniLabel);
                 
                 if (GUILayout.Button("Save to File", GUILayout.Height(25)))
                 {
@@ -2655,6 +2742,11 @@ public class LudoAIPlugin : EditorWindow
 
         spritesheetLoop = EditorGUILayout.Toggle("Loop Animation", spritesheetLoop);
         spritesheetCrop = EditorGUILayout.Toggle("Crop to Content", spritesheetCrop);
+        spritesheetUsePixelGrid = EditorGUILayout.Toggle("Use Pixel Grid", spritesheetUsePixelGrid);
+        if (!spritesheetUsePixelGrid)
+        {
+            GUILayout.Label("Off packs the sheet as ordinary art, for when a detected pixel grid is wrong for your sprite (a smooth sprite coming back as coarse blocks). Forge Pixel always uses its grid.", EditorStyles.helpBox);
+        }
 
         GUILayout.Space(5);
 
@@ -2751,6 +2843,11 @@ public class LudoAIPlugin : EditorWindow
         }
 
         spritesheetGif = EditorGUILayout.Toggle("Also create a GIF", spritesheetGif);
+        spritesheetSaveNormals = EditorGUILayout.Toggle("Normal Map", spritesheetSaveNormals);
+        if (spritesheetSaveNormals)
+        {
+            GUILayout.Label(NormalMapHint("0.5 credits on top of the animation. It lines up with the sheet frame for frame."), EditorStyles.helpBox);
+        }
 
         GUILayout.Space(10);
 
@@ -2781,6 +2878,7 @@ public class LudoAIPlugin : EditorWindow
             GUILayout.Label($"Frames: {currentSpritesheet.NumFrames}");
             GUILayout.Label($"Frame Size: {currentSpritesheet.TargetFrameSize}");
             GUILayout.Label($"Loop: {currentSpritesheet.Loop}");
+            if (!string.IsNullOrEmpty(currentSpritesheet.NormalMapUrl)) GUILayout.Label("With normal map (saved next to the spritesheet)");
 
             GUILayout.BeginHorizontal();
             if (GUILayout.Button("Save Spritesheet", GUILayout.Height(30)))
@@ -2859,6 +2957,8 @@ public class LudoAIPlugin : EditorWindow
         GUILayout.Space(10);
 
         soundEffectAugment = EditorGUILayout.Toggle("Augment Prompt", soundEffectAugment);
+        soundEffectLoop = EditorGUILayout.Toggle("Loop", soundEffectLoop);
+        if (soundEffectLoop) GUILayout.Label("Generate a sound effect that loops seamlessly.", EditorStyles.helpBox);
 
         GUILayout.Space(10);
 
@@ -2904,6 +3004,8 @@ public class LudoAIPlugin : EditorWindow
         GUILayout.Space(10);
 
         musicAugment = EditorGUILayout.Toggle("Augment Prompt", musicAugment);
+        musicLoop = EditorGUILayout.Toggle("Loop", musicLoop);
+        if (musicLoop) GUILayout.Label("Generate music that loops seamlessly.", EditorStyles.helpBox);
 
         GUILayout.Space(10);
 
@@ -3206,6 +3308,11 @@ public class LudoAIPlugin : EditorWindow
         {
             requestData["gif"] = true;
         }
+        requestData["use_pixel_grid"] = spritesheetUsePixelGrid;
+        if (spritesheetSaveNormals)
+        {
+            requestData["save_normals"] = true;
+        }
 
         var job = new EditorHttpResult();
         yield return RunApiJob(fromClip ? "/assets/sprite/transfer-motion" : "/assets/sprite/animate", requestData, "Animating sprite", job);
@@ -3235,6 +3342,7 @@ public class LudoAIPlugin : EditorWindow
                     Video = new VideoInfo { Url = animatedResponse.VideoUrl },
                     GifB64 = animatedResponse.GifUrl,
                     AudioUrl = animatedResponse.AudioUrl,
+                    NormalMapUrl = animatedResponse.NormalMapUrl,
                     NumFrames = animatedResponse.NumFrames,
                     TargetFrameSize = spritesheetFrameSize,
                     Loop = spritesheetLoop,
@@ -3338,6 +3446,9 @@ public class LudoAIPlugin : EditorWindow
 
         if (!string.IsNullOrEmpty(imageAspectRatio) && imageAspectRatio != "default")
             requestData["aspect_ratio"] = imageAspectRatio;
+
+        if (imageSaveNormals)
+            requestData["save_normals"] = true;
 
         var job = new EditorHttpResult();
         yield return RunApiJob("/assets/image", requestData, "Generating image(s)", job);
@@ -4118,7 +4229,8 @@ public class LudoAIPlugin : EditorWindow
         {
             ["description"] = soundEffectDescription,
             ["duration"] = soundEffectDuration,
-            ["augment_prompt"] = soundEffectAugment
+            ["augment_prompt"] = soundEffectAugment,
+            ["loop"] = soundEffectLoop
         };
 
         yield return GenerateAudio("/audio/sound-effect", requestData, "sound effect", "Sound Effect", audio => currentSoundEffect = audio);
@@ -4136,7 +4248,8 @@ public class LudoAIPlugin : EditorWindow
         var requestData = new Dictionary<string, object>
         {
             ["description"] = musicDescription,
-            ["augment_prompt"] = musicAugment
+            ["augment_prompt"] = musicAugment,
+            ["loop"] = musicLoop
         };
 
         // Add optional lyrics
@@ -4399,7 +4512,8 @@ public class LudoAIPlugin : EditorWindow
                 File.WriteAllBytes(savePath, finalData);
                 AssetDatabase.Refresh();
                 Debug.Log($"[LudoAIPlugin] Spritesheet saved to: {savePath}");
-                EditorUtility.DisplayDialog("Success", $"Spritesheet saved successfully as {extension.ToUpper()} to:\n{savePath}", "OK");
+                EditorUtility.DisplayDialog("Success", $"Spritesheet saved successfully as {extension.ToUpper()} to:\n{savePath}{NormalMapNote(spritesheet.NormalMapUrl, savePath)}", "OK");
+                yield return SaveNormalMapNextTo(spritesheet.NormalMapUrl, savePath);
             }
         }
     }
@@ -4425,6 +4539,7 @@ public class LudoAIPlugin : EditorWindow
 
     private IEnumerator DownloadAndSaveImage(GeneratedImage image)
     {
+        string savedPath = null;
         UnityWebRequest www = UnityWebRequest.Get(image.Url);
         www.SetRequestHeader("x-ludo-tool", "unity");
         yield return www.SendWebRequest();
@@ -4453,7 +4568,8 @@ public class LudoAIPlugin : EditorWindow
                 }
                 
                 Debug.Log($"[LudoAIPlugin] Image saved to: {savePath}");
-                EditorUtility.DisplayDialog("Success", $"Image saved successfully to:\n{savePath}", "OK");
+                savedPath = savePath;
+                EditorUtility.DisplayDialog("Success", $"Image saved successfully to:\n{savePath}{NormalMapNote(image.NormalMapUrl, savePath)}", "OK");
             }
         }
         catch (Exception e)
@@ -4461,6 +4577,7 @@ public class LudoAIPlugin : EditorWindow
             Debug.LogError($"[LudoAIPlugin] Failed to save image: {e.Message}");
             EditorUtility.DisplayDialog("Save Error", $"Failed to save image: {e.Message}", "OK");
         }
+        if (savedPath != null) yield return SaveNormalMapNextTo(image.NormalMapUrl, savedPath);
     }
 
     private void Save3DModelToFile(Generated3DModel model)
@@ -5025,6 +5142,10 @@ public class LudoAIPlugin : EditorWindow
 
         [JsonProperty("audio_url")]
         public string AudioUrl { get; set; }
+
+        // With save_normals: the normal map (lossless WebP), saved next to the file.
+        [JsonProperty("normal_map_url")]
+        public string NormalMapUrl { get; set; }
     }
 
     [Serializable]
@@ -5055,6 +5176,10 @@ public class LudoAIPlugin : EditorWindow
     {
         [JsonProperty("url")]
         public string Url { get; set; }
+
+        // With save_normals: the normal map (lossless WebP), saved next to the file.
+        [JsonProperty("normal_map_url")]
+        public string NormalMapUrl { get; set; }
 
         [JsonProperty("width")]
         public int Width { get; set; }
@@ -5151,6 +5276,10 @@ public class LudoAIPlugin : EditorWindow
 
         [JsonProperty("audio_url")]
         public string AudioUrl { get; set; }
+
+        // With save_normals: the normal map (lossless WebP), saved next to the file.
+        [JsonProperty("normal_map_url")]
+        public string NormalMapUrl { get; set; }
 
         [JsonProperty("num_frames")]
         public int NumFrames { get; set; }
@@ -5350,6 +5479,10 @@ public class LudoAIPlugin : EditorWindow
         [JsonProperty("gif_url")]
         public string GifUrl { get; set; }
 
+        // With save_normals: the normal map (lossless WebP), saved next to the file.
+        [JsonProperty("normal_map_url")]
+        public string NormalMapUrl { get; set; }
+
         [JsonProperty("num_frames")]
         public int NumFrames { get; set; }
 
@@ -5378,6 +5511,10 @@ public class LudoAIPlugin : EditorWindow
 
         [JsonProperty("url")]
         public string Url { get; set; }
+
+        // With save_normals: the normal map (lossless WebP), saved next to the file.
+        [JsonProperty("normal_map_url")]
+        public string NormalMapUrl { get; set; }
 
         [JsonProperty("width")]
         public int Width { get; set; }

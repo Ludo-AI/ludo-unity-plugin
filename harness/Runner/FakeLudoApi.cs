@@ -478,12 +478,18 @@ public class FakeLudoApi : IDisposable
     {
         var b = job.Body;
         long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        bool normals = b["save_normals"] != null && (bool)b["save_normals"];
         switch (job.Path)
         {
             case "/assets/image":
                 int n = b["n"] == null ? 1 : (int)b["n"]!.GetValue<double>();
                 var arr = new JsonArray();
-                for (int i = 0; i < n; i++) arr.Add(new JsonObject { ["url"] = F($"{job.Id}-{i}.webp"), ["request_id"] = null, ["created_at"] = now });
+                for (int i = 0; i < n; i++)
+                {
+                    var img = new JsonObject { ["url"] = F($"{job.Id}-{i}.webp"), ["request_id"] = null, ["created_at"] = now };
+                    if (normals) img["normal_map_url"] = F($"{job.Id}-{i}-normal.webp");
+                    arr.Add(img);
+                }
                 return arr;
             case "/assets/animation":
                 // Made once per job (polls re-project the result), then on the account's list.
@@ -529,6 +535,7 @@ public class FakeLudoApi : IDisposable
                 };
                 if (b["gif"] != null && (bool)b["gif"]) s["gif_url"] = F($"{job.Id}-preview.gif");
                 if ((string)b["model"] is null or "hydra") s["audio_url"] = F($"{job.Id}-sfx.mp3");
+                if (normals) s["normal_map_url"] = F($"{job.Id}-sheet-normal.webp");
                 return s;
             case "/assets/3d-model":
                 var m3 = new JsonObject { ["model_url"] = F($"{job.Id}-model.glb"), ["snapshots"] = new JsonArray(F($"{job.Id}-snap0.webp"), F($"{job.Id}-snap1.webp")) };
@@ -545,13 +552,18 @@ public class FakeLudoApi : IDisposable
                         ["render_3d"] = new JsonObject { ["style_id"] = (string)b["style_id"] ?? "render_3d", ["style_version"] = 1, ["direction"] = (string)d },
                     };
                     if (b["gif"] != null && (bool)b["gif"]) sheet["gif_url"] = F($"{job.Id}-{d}.gif");
+                    if (normals) sheet["normal_map_url"] = F($"{job.Id}-sheet-{d}-normal.webp");
                     sheets.Add(sheet);
                 }
                 return new JsonObject { ["sheets"] = sheets };
             case "/assets/sprite/directional-stills":
                 var stills = new JsonArray();
                 foreach (var d in b["directions"]?.AsArray() ?? new JsonArray(JsonValue.Create("SW")))
-                    stills.Add(new JsonObject { ["direction"] = (string)d, ["url"] = F($"{job.Id}-still-{d}.webp"), ["width"] = 1024, ["height"] = 1024 });
+                {
+                    var still = new JsonObject { ["direction"] = (string)d, ["url"] = F($"{job.Id}-still-{d}.webp"), ["width"] = 1024, ["height"] = 1024 };
+                    if (normals) still["normal_map_url"] = F($"{job.Id}-still-{d}-normal.webp");
+                    stills.Add(still);
+                }
                 return new JsonObject { ["images"] = stills };
             case "/assets/image/upscale":
                 return new JsonObject { ["url"] = F($"{job.Id}-upscaled.png"), ["request_id"] = (string)b["request_id"], ["created_at"] = now };

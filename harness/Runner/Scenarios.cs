@@ -856,6 +856,96 @@ public static class Scenarios
         c.Check(q.Get("myAnimations") != null, "retry did not load My Animations");
     }
 
+    // ---------------------------------------------------------------- optional fields
+
+    // Clicks a save button that should write a file and its normal map next to it.
+    static void SaveWithNormal(Ctx c, PluginDriver p, string label)
+    {
+        var before = Directory.GetFiles(c.OutDir, "*", SearchOption.AllDirectories).ToDictionary(f => f, File.GetLastWriteTimeUtc);
+        int dialogsBefore = Harness.Dialogs.Count;
+        p.Click(label);
+        c.Require(p.RunUntilIdle(60), $"'{label}' never finished");
+        foreach (var d in Harness.Dialogs.Skip(dialogsBefore).Where(d => d.Title.Contains("Error"))) c.Failures.Add($"'{label}': dialog {d}");
+        var added = Directory.GetFiles(c.OutDir, "*", SearchOption.AllDirectories).Where(f => !before.TryGetValue(f, out var t) || File.GetLastWriteTimeUtc(f) != t).ToList();
+        var mains = added.Where(f => !Path.GetFileNameWithoutExtension(f).EndsWith("_normal")).ToList();
+        c.Require(mains.Count >= 1, $"'{label}' saved nothing");
+        foreach (var main in mains)
+        {
+            string normal = Path.Combine(Path.GetDirectoryName(main)!, Path.GetFileNameWithoutExtension(main) + "_normal.png");
+            c.Check(added.Contains(normal), $"'{label}': no normal map next to {Path.GetFileName(main)} (new files: {string.Join(", ", added.Select(Path.GetFileName))})");
+            if (File.Exists(normal)) c.Check(Sniff(File.ReadAllBytes(normal)) == "png", $"{Path.GetFileName(normal)} is not a PNG");
+        }
+    }
+
+    static void NormalMapsAndOptions(Ctx c)
+    {
+        // Generate Sprite: free normal maps, saved next to each image
+        var p = c.NewPlugin(new FakeLudoApi.Behavior { PollsUntilDone = 1, PollAfterMs = 1 });
+        Tab(p, "Sprites", "currentSpriteTab", "Image");
+        p.Set("imagePrompt", "a stone wall tile");
+        p.Click("Generate Image(s)");
+        c.Require(p.RunUntilIdle(20), "image never finished");
+        c.Check(LastBody(c, "/assets/image")?["save_normals"] == null, "save_normals sent while off");
+        p.Set("generatedImages", Activator.CreateInstance(p.Get("generatedImages").GetType()));
+        p.Set("imageSaveNormals", true);
+        p.Click("Generate Image(s)");
+        c.Require(p.RunUntilIdle(20), "image with normal map never finished");
+        c.Check(LastBody(c, "/assets/image")?["save_normals"]?.GetValue<bool>() == true, "save_normals not sent");
+        c.Check(!string.IsNullOrEmpty((string)PluginDriver.Prop(((IList)p.Get("generatedImages"))[0], "NormalMapUrl")), "normal_map_url not read");
+        SaveWithNormal(c, p, "Save to File");
+        c.CheckClean(p, "/assets/image");
+
+        // Animate Sprite: normal map (both sources) and Use Pixel Grid
+        Tab(p, "Sprites", "currentSpriteTab", "ImageToSpritesheet");
+        p.Set("spritesheetInitialImageUrl", FakeFile(c, "input.webp"));
+        p.Click("Animate Sprite");
+        c.Require(p.RunUntilIdle(20), "animation never finished");
+        var body = LastBody(c, "/assets/sprite/animate");
+        c.Check(body?["use_pixel_grid"]?.GetValue<bool>() == true && body?["save_normals"] == null, $"defaults: use_pixel_grid true, no save_normals ({body})");
+        p.Set("spritesheetUsePixelGrid", false);
+        p.Set("spritesheetSaveNormals", true);
+        p.Click("Animate Sprite");
+        c.Require(p.RunUntilIdle(20), "animation with normal map never finished");
+        body = LastBody(c, "/assets/sprite/animate");
+        c.Check(body?["use_pixel_grid"]?.GetValue<bool>() == false && body?["save_normals"]?.GetValue<bool>() == true, $"use_pixel_grid false / save_normals ({body})");
+        SaveWithNormal(c, p, "Save Spritesheet");
+        p.Set("spritesheetSource", "preset");
+        p.Gui();
+        c.Require(p.RunUntilIdle(20), "clips never loaded");
+        p.Gui();
+        p.Click("Animate Sprite");
+        c.Require(p.RunUntilIdle(20), "clip animation with normal map never finished");
+        body = LastBody(c, "/assets/sprite/transfer-motion");
+        c.Check(body?["use_pixel_grid"]?.GetValue<bool>() == false && body?["save_normals"]?.GetValue<bool>() == true, $"transfer: use_pixel_grid / save_normals ({body})");
+        SaveWithNormal(c, p, "Save Spritesheet");
+        c.CheckClean(p);
+
+        // Directional Sprites: 0.5 credits more per sheet, free with stills
+        var d = DirectionalPlugin(c, new FakeLudoApi.Behavior { PollsUntilDone = 1, PollAfterMs = 1 });
+        d.Set("directionalModelInput", FakeFile(c, "rigged.glb"));
+        d.Set("directionalDirections", new List<string> { "S", "SW" });
+        d.Set("directionalSaveNormals", true);
+        d.Click("Preview (free)");
+        c.Require(d.RunUntilIdle(20), "preview never finished");
+        c.Check(LastBody(c, "/assets/sprite/directional-preview")?["save_normals"] == null, "preview sent save_normals, which it does not take");
+        d.Click("Render Spritesheets (3 credits)");
+        c.Require(d.RunUntilIdle(20), "sheets with normal maps never finished");
+        c.Check(LastBody(c, "/assets/sprite/directional")?["save_normals"]?.GetValue<bool>() == true, "sheets: save_normals not sent");
+        SaveWithNormal(c, d, "Save Spritesheet");
+        SaveWithNormal(c, d, "Save All Spritesheets");
+        d.Click("Render Stills (1 credit)");
+        c.Require(d.RunUntilIdle(20), "stills with normal maps never finished");
+        c.Check(LastBody(c, "/assets/sprite/directional-stills")?["save_normals"]?.GetValue<bool>() == true, "stills: save_normals not sent");
+        SaveWithNormal(c, d, "Save All Stills");
+        c.CheckClean(d);
+
+        // Audio: Loop on sound effects and music
+        Audio(c, "SoundEffect", "/audio/sound-effect", a => { a.Set("soundEffectDescription", "rain on a tin roof"); a.Set("soundEffectLoop", true); }, "Generate Sound Effect", "currentSoundEffect", "Save Sound Effect");
+        c.Check(LastBody(c, "/audio/sound-effect")?["loop"]?.GetValue<bool>() == true, "sound effect: loop not sent");
+        Audio(c, "Music", "/audio/music", a => { a.Set("musicDescription", "tavern theme"); a.Set("musicLoop", true); }, "Generate Music", "currentMusic", "Save Music");
+        c.Check(LastBody(c, "/audio/music")?["loop"]?.GetValue<bool>() == true, "music: loop not sent");
+    }
+
     // ---------------------------------------------------------------- Upscale Image
 
     static void Upscale(Ctx c)
@@ -1250,6 +1340,7 @@ public static class Scenarios
         new("generate", "my animations: animation clips and my animations on animate 3D", AnimationClips3D),
         new("generate", "my animations: animate sprite from a clip or my animation", AnimateSpriteFromClip),
         new("failure", "my animations: deleted animation, one source, list unavailable", AnimationValidation),
+        new("generate", "normal maps saved next to the asset, use pixel grid, audio loop", NormalMapsAndOptions),
         new("failure", "directional preview replaced by a newer one (204)", DirectionalPreviewSuperseded),
         new("failure", "directional styles unavailable: message and retry", DirectionalStylesUnavailable),
         new("generate", "upscale image: from a card, from the project, size limit", Upscale),

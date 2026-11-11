@@ -13,6 +13,9 @@
 - **Mirror**: play an Animation Clip or one of My Animations on the other side, left and right swapped, in all three tools.
 - **Animate 3D** can retarget an Animation Clip or one of My Animations onto a rigged model (0.5 credits), as well as animate from a text prompt.
 - **Animate Sprite** can play an Animation Clip or one of My Animations on a sprite, seen from the camera view the sprite is drawn from, as well as animate from a text description.
+- **Normal maps** for 2D lighting: a **Normal Map** option on **Generate Sprite** (free), **Animate Sprite** (0.5 credits) and **Directional Sprites** (0.5 credits per sheet, free with stills). Saving the image or sheet saves its normal map next to it as `<name>_normal.png`.
+- **Use Pixel Grid** on **Animate Sprite**: turn it off when a detected pixel grid is wrong for your sprite.
+- **Loop** for sound effects and music: generate audio that loops seamlessly.
 - **Art styles renamed to match Ludo**: the pixel-art styles are now **Micro Pixel**, **8-Bit Pixel**, **16-Bit Pixel**, **32-Bit Pixel** and **Free Pixel**, and Anime/Manga is **Anime**. The new names keep the old looks, though not always under the same-sounding name: the old 8-Bit is Micro Pixel, 16-Bit is 8-Bit Pixel, 32-Bit is 16-Bit Pixel, Hi-Bit is 32-Bit Pixel and Retro 2D is Free Pixel. A style chosen in an open window before the update moves to its new name.
 - **Griffin for sprite animation**: the highest-resolution model, with the best image fidelity. 10 credits per animation, always 5 seconds. The model notes now match Ludo's own.
 - **Directional Sprites: the Trim to Loop choice is gone.** Ludo now trims an Animation Clip by its own loop flag and no longer takes a trim setting, so the plugin stops offering and sending it. Keep Ground Travel, Keep Vertical Motion and Seamless Loop work as before.
@@ -212,6 +215,7 @@ Create sprites, icons, UI assets, backgrounds, textures and more from a descript
 6. **Number of Images**: Generate 1-8 at once
 
 7. **Augment Prompt**: Enable to let AI enhance your description
+   **Normal Map** (free): also makes a normal map of each image, for 2D lighting. Saving an image saves its map next to it as `<name>_normal.png` (OpenGL convention, which Unity reads; set its Texture Type to Normal map)
 
 8. **Generate**: Click "Generate Image(s)". The status line shows the job's progress.
 
@@ -236,6 +240,7 @@ Turn static sprites into animated spritesheets.
 
 4. **Crop & Margins**:
    - **Crop to Content**: Remove empty space
+   - **Use Pixel Grid** (on by default): packs the sheet on a detected pixel grid. Turn it off when the detected grid is wrong for your sprite (a smooth sprite coming back as coarse blocks). Forge Pixel always uses its grid
    - **Margin Mode**: Auto, Manual, or None. In Manual, set the horizontal and vertical margins separately (e.g. more horizontal room for a sword slash, more vertical room for a jump)
 
 5. **Animation Model**:
@@ -249,6 +254,7 @@ Turn static sprites into animated spritesheets.
 7. **Image Type**: sprite, sprite-vfx, item-icon, ui_asset, logo, tiling sprites, parallax layer, tile, texture, portrait, card-art
 
 8. **Also create a GIF**: Enable to get an animated GIF as well
+   **Normal Map** (0.5 credits on top): a normal map of the sheet, frame for frame, saved next to it as `<name>_normal.png`
 
 9. **Generate**: Click "Animate Sprite". The status line shows the job's progress.
 
@@ -389,7 +395,7 @@ Render a 3D model into one spritesheet per direction, in a 2D style. Every direc
 5. Pick the **Style**. The list and each style's settings come from Ludo, so new styles appear without a plugin update. Some settings take a **custom colour** (`#rrggbb`); more are under **Advanced Style Settings**
 6. Click **Preview (free)** to see small animated frames for each direction. Nothing is saved
 7. Then:
-   - **Render Spritesheets** (1 credit per direction): **Frame Size** up to 640px, **Frames per Sheet** (4-100), **Seamless Loop**, optional GIFs. Each sheet lists its grid (columns x rows) and fps; slice it in Unity's Sprite Editor with **Grid By Cell Count**
+   - **Render Spritesheets** (1 credit per direction): **Frame Size** up to 640px, **Frames per Sheet** (4-100), **Seamless Loop**, optional GIFs, optional **Normal Maps** (0.5 credits more per sheet, free with stills, saved next to each file as `<name>_normal.png`). Each sheet lists its grid (columns x rows) and fps; slice it in Unity's Sprite Editor with **Grid By Cell Count**
    - **Render Stills** (0.5 credits per direction): the model as it is, one large transparent image per direction. **Animate This Still** sends one to **Animate Sprite**
 8. **Save Spritesheet** / **Save Still** (PNG), **Save GIF**, or **Save All** into a folder
 
@@ -418,7 +424,7 @@ Generate AI-powered audio assets for your game.
 2. Set duration:
    - **0 seconds**: Auto-duration (recommended)
    - **1-10 seconds**: Specific length
-3. Enable **Prompt Augmentation** for enhanced descriptions
+3. Enable **Prompt Augmentation** for enhanced descriptions; **Loop** makes a sound effect that loops seamlessly
 4. Click **Generate Sound Effect**
 5. Preview the audio
 6. Click **Save** to save to `Assets/Audio/SoundEffects/`
@@ -436,7 +442,7 @@ Generate AI-powered audio assets for your game.
 
 1. Enter music description (e.g., "upbeat electronic game music", "fantasy adventure theme")
 2. Optionally add lyrics
-3. Enable **Prompt Augmentation** for better results
+3. Enable **Prompt Augmentation** for better results; **Loop** makes music that loops seamlessly
 4. Click **Generate Music**
 5. Preview and save to `Assets/Audio/Music/`
 
