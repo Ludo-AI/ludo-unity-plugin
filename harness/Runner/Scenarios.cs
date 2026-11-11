@@ -1016,6 +1016,39 @@ public static class Scenarios
         c.Check(p.ErrorDialogs.Any(d => d.Message.Contains("same size")), $"mask size 400 not shown; dialogs: {string.Join(" / ", p.Dialogs)}");
     }
 
+    static void PixelArtMode(Ctx c)
+    {
+        var p = c.NewPlugin();
+        Tab(p, "Sprites", "currentSpriteTab", "Edit");
+        string file = Path.Combine(c.OutDir, "to-pixelate.png");
+        File.WriteAllBytes(file, UnityEngine.FakeImage.Png(512, 384));
+        Harness.OpenFilePanel = (title, ext) => file;
+        p.Click("Select from Project");
+        p.Set("editMode", "pixel_art");
+        p.Set("pixelArtPixelSize", 8f);
+        p.Set("pixelArtKeepColors", false);
+        p.Set("pixelArtPaletteSize", 16);
+        p.Click("Convert to Pixel Art (free)");
+        c.Require(p.RunUntilIdle(20), "pixel art never finished: " + p.Status);
+        var body = LastBody(c, "/assets/image/pixel-art");
+        c.Check(body?["pixel_size"]?.GetValue<double>() == 8 && body?["palette_size"]?.GetValue<double>() == 16 && ((string)body?["image"] ?? "").StartsWith("data:image/png"), $"pixel art body ({body?["pixel_size"]}, {body?["palette_size"]})");
+        c.Check(c.Api.JobsCreated == 0 && c.Api.Polls().Count == 0, "pixel art is synchronous, but a job was polled");
+        var art = p.Get("currentPixelArt");
+        c.Require(art != null && (int)PluginDriver.Prop(art, "Columns")! == 64, $"pixel art result not read; status {p.Status}");
+        c.Check(p.Status.Contains("64x48"), $"status does not give the art's size: '{p.Status}'");
+        ClickSave(c, p, "Save Pixel Art", "png");
+        c.CheckClean(p, "/assets/image/pixel-art");
+
+        // all colours kept: no palette_size; Detect: no pixel_size, and the API's 400 is shown
+        p.Set("pixelArtKeepColors", true);
+        p.Set("pixelArtDetectSize", true);
+        p.Click("Convert to Pixel Art (free)");
+        c.Require(p.RunUntilIdle(20), "stuck after a 400");
+        body = LastBody(c, "/assets/image/pixel-art");
+        c.Check(body?["pixel_size"] == null && body?["palette_size"] == null, $"Detect / Keep All Colors still sent sizes ({body?["pixel_size"]}, {body?["palette_size"]})");
+        c.Check(p.ErrorDialogs.Any(d => d.Message.Contains("pixel_size")), $"no-grid 400 not shown; dialogs: {string.Join(" / ", p.Dialogs)}");
+    }
+
     // ---------------------------------------------------------------- Upscale Image
 
     static void Upscale(Ctx c)
@@ -1416,6 +1449,7 @@ public static class Scenarios
         new("failure", "directional styles unavailable: message and retry", DirectionalStylesUnavailable),
         new("generate", "upscale image: from a card, from the project, size limit", Upscale),
         new("generate", "edit image: edit, edit with mask, erase with mask, mask size", EditImageModes),
+        new("generate", "edit image: convert to pixel art (synchronous), detect without a grid", PixelArtMode),
         new("live", "directional sprites + upscale against the live API", DirectionalLive, LiveToo: true),
         new("generate", "audio: sound effect", c => Audio(c, "SoundEffect", "/audio/sound-effect", p => { p.Set("soundEffectDescription", "sword clash"); p.Set("soundEffectDuration", 2f); }, "Generate Sound Effect", "currentSoundEffect", "Save Sound Effect"), LiveToo: true),
         new("generate", "audio: music", c => Audio(c, "Music", "/audio/music", p => p.Set("musicDescription", "calm village theme"), "Generate Music", "currentMusic", "Save Music"), LiveToo: true),

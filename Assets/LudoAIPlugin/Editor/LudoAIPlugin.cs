@@ -240,14 +240,21 @@ public class LudoAIPlugin : EditorWindow
     private int editMaskHeight = 0;
     private List<GeneratedImage> editResults = new List<GeneratedImage>();
     private Vector2 editScrollPosition;
-    private readonly string[] editModeOptions = { "edit", "mask_replace", "mask_erase" };
-    private readonly string[] editModeLabels = { "Edit Image", "Edit with Mask", "Erase with Mask" };
+    private readonly string[] editModeOptions = { "edit", "mask_replace", "mask_erase", "pixel_art" };
+    private readonly string[] editModeLabels = { "Edit Image", "Edit with Mask", "Erase with Mask", "Convert to Pixel Art" };
     private readonly string[] editModeHints =
     {
         "Modifications with textual instructions. The whole image is redrawn, so colours and details outside the change can shift. 0.5 credits per result.",
         "Substitute the masked area with new content: only the white part of the mask changes. 1 credit per result.",
-        "Remove the selected masked area: what is under the white part of the mask is erased. No prompt. 1 credit per result."
+        "Remove the selected masked area: what is under the white part of the mask is erased. No prompt. 1 credit per result.",
+        "Turn any image into pixel art, with the pixel size and number of colors you choose. The result is about the size of the image. Free."
     };
+    // Convert to Pixel Art (POST /assets/image/pixel-art, free and synchronous)
+    private bool pixelArtDetectSize = false;   // use the image's own pixel grid (it must have one)
+    private float pixelArtPixelSize = 8f;      // one art pixel, in the image's pixels (at least 2)
+    private bool pixelArtKeepColors = true;
+    private int pixelArtPaletteSize = 16;      // at most this many colours (2-256)
+    private PixelArtResult currentPixelArt = null;
 
     // Audio Generation Variables
     private string soundEffectDescription = "";
@@ -2445,6 +2452,26 @@ public class LudoAIPlugin : EditorWindow
             float cost = editCount * (EditUsesMask() ? 1f : 0.5f);
             action = $"{action} ({cost.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)} credit{(cost == 1f ? "" : "s")})";
         }
+        else if (editMode == "pixel_art")
+        {
+            pixelArtDetectSize = EditorGUILayout.Toggle("Detect Pixel Size", pixelArtDetectSize);
+            if (pixelArtDetectSize)
+            {
+                GUILayout.Label("Uses the image's own pixel size, so it only works on an image already on a pixel grid (broken AI pixel art, for example).", EditorStyles.helpBox);
+            }
+            else
+            {
+                pixelArtPixelSize = EditorGUILayout.Slider("Pixel Size:", pixelArtPixelSize, 2f, 64f);
+                pixelArtPixelSize = (float)Math.Round(pixelArtPixelSize * 2f) / 2f;
+                GUILayout.Label("The size of one pixel-art pixel, in the image's pixels: larger values give coarser art.", EditorStyles.helpBox);
+            }
+            pixelArtKeepColors = EditorGUILayout.Toggle("Keep All Colors", pixelArtKeepColors);
+            if (!pixelArtKeepColors)
+            {
+                pixelArtPaletteSize = EditorGUILayout.IntSlider("Colors:", pixelArtPaletteSize, 2, 256);
+            }
+            action = "Convert to Pixel Art (free)";
+        }
 
         GUILayout.Space(10);
 
@@ -2452,8 +2479,16 @@ public class LudoAIPlugin : EditorWindow
         if (GUILayout.Button(action, GUILayout.Height(30)))
         {
             isProcessing = true;
-            statusMessage = "Editing image...";
-            EditorCoroutineUtility.StartCoroutineOwnerless(EditImage());
+            if (editMode == "pixel_art")
+            {
+                statusMessage = "Converting to pixel art...";
+                EditorCoroutineUtility.StartCoroutineOwnerless(ConvertToPixelArt());
+            }
+            else
+            {
+                statusMessage = "Editing image...";
+                EditorCoroutineUtility.StartCoroutineOwnerless(EditImage());
+            }
         }
         GUI.enabled = true;
 
@@ -2468,6 +2503,32 @@ public class LudoAIPlugin : EditorWindow
 
     private void DrawEditResults()
     {
+        if (currentPixelArt != null && !string.IsNullOrEmpty(currentPixelArt.Url))
+        {
+            GUILayout.Label("Pixel Art:", EditorStyles.boldLabel);
+            GUILayout.BeginVertical("box");
+            GUILayout.BeginHorizontal();
+            Texture2D art = RemoteTexture(currentPixelArt.Url);
+            if (art != null) GUILayout.Label(art, GUILayout.Width(100), GUILayout.Height(100));
+            GUILayout.BeginVertical();
+            if (currentPixelArt.Columns > 0)
+            {
+                GUILayout.Label($"{currentPixelArt.Columns}x{currentPixelArt.Rows} art pixels, pixel size {currentPixelArt.PixelSize.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}", EditorStyles.miniLabel);
+            }
+            if (GUILayout.Button("Save Pixel Art", GUILayout.Height(25)))
+            {
+                EditorCoroutineUtility.StartCoroutineOwnerless(DownloadAndSaveImageUrl(currentPixelArt.Url, "Save Pixel Art", $"PixelArt_{DateTime.Now:yyyyMMdd_HHmmss}", "Pixel art"));
+            }
+            if (GUILayout.Button("Edit This Result", GUILayout.Height(25)))
+            {
+                UseForEdit(currentPixelArt.Url, 0, 0);
+            }
+            GUILayout.EndVertical();
+            GUILayout.EndHorizontal();
+            GUILayout.Label("The art is about the size of the image. For one image pixel per art pixel, import it with Filter Mode Point and scale it to the columns x rows above.", EditorStyles.helpBox);
+            GUILayout.EndVertical();
+        }
+
         if (editResults.Count == 0) return;
         GUILayout.Label($"Edited Images ({editResults.Count}):", EditorStyles.boldLabel);
         foreach (var image in editResults)
@@ -2545,6 +2606,48 @@ public class LudoAIPlugin : EditorWindow
             statusMessage = $"Error reading the edited images: {e.Message}";
             Debug.LogError($"[LudoAIPlugin] {statusMessage}");
             EditorUtility.DisplayDialog("Edit Image Error", statusMessage, "OK");
+        }
+        isProcessing = false;
+    }
+
+    // Free and synchronous: the answer is the result, no job. Limited to 20 calls per 5 minutes.
+    private IEnumerator ConvertToPixelArt()
+    {
+        var payload = new Dictionary<string, object> { ["image"] = editImageInput };
+        if (!pixelArtDetectSize) payload["pixel_size"] = Mathf.Max(2f, pixelArtPixelSize);
+        if (!pixelArtKeepColors) payload["palette_size"] = Mathf.Clamp(pixelArtPaletteSize, 2, 256);
+
+        var result = new EditorHttpResult();
+        yield return SendJsonWithHttpClient(HttpMethod.Post, apiUrl + "/assets/image/pixel-art", JsonConvert.SerializeObject(payload), 300, result);
+
+        if (!result.Success)
+        {
+            statusMessage = FormatEditorHttpError("converting to pixel art", result);
+            Debug.LogError($"[LudoAIPlugin] {statusMessage}");
+            EditorUtility.DisplayDialog("Convert to Pixel Art Error", statusMessage, "OK");
+            isProcessing = false;
+            yield break;
+        }
+        try
+        {
+            var art = JsonConvert.DeserializeObject<PixelArtResult>(result.Body);
+            if (art != null && !string.IsNullOrEmpty(art.Url))
+            {
+                currentPixelArt = art;
+                statusMessage = art.Columns > 0
+                    ? $"Converted to pixel art: {art.Columns}x{art.Rows} art pixels. The original is kept."
+                    : "Converted to pixel art. The original is kept.";
+            }
+            else
+            {
+                statusMessage = "The conversion came back with no image.";
+                EditorUtility.DisplayDialog("Convert to Pixel Art Error", statusMessage, "OK");
+            }
+        }
+        catch (Exception e)
+        {
+            statusMessage = $"Error reading the pixel art: {e.Message}";
+            EditorUtility.DisplayDialog("Convert to Pixel Art Error", statusMessage, "OK");
         }
         isProcessing = false;
     }
@@ -5703,6 +5806,24 @@ public class LudoAIPlugin : EditorWindow
 
         [JsonProperty("preview_url")]
         public string PreviewUrl { get; set; }
+    }
+
+    // POST /assets/image/pixel-art
+    [Serializable]
+    public class PixelArtResult
+    {
+        [JsonProperty("url")]
+        public string Url { get; set; }
+
+        // The pixel size used, in the input's pixels: the one sent, or the detected one (can be fractional).
+        [JsonProperty("pixel_size")]
+        public float PixelSize { get; set; }
+
+        [JsonProperty("columns")]
+        public int Columns { get; set; }
+
+        [JsonProperty("rows")]
+        public int Rows { get; set; }
     }
 
     // GET /assets/animations (My Animations) and the result of POST /assets/animation

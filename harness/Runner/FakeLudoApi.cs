@@ -207,6 +207,21 @@ public class FakeLudoApi : IDisposable
                 return;
             }
 
+            if (req.HttpMethod == "POST" && api == "/assets/image/pixel-art")
+            {
+                // Free and synchronous; no detectable grid on our fake images unless pixel_size is given.
+                string text = await new StreamReader(req.InputStream, Encoding.UTF8).ReadToEndAsync();
+                var body = JsonNode.Parse(text)!.AsObject();
+                rec.Body = body;
+                var findings = contract.Validate("POST", api, body);
+                rec.Findings = findings;
+                if (!findings.Ok) { await Json(ctx, rec, 400, new JsonObject { ["message"] = "Request validation failed: " + string.Join("; ", findings.Errors) }); return; }
+                if (body["pixel_size"] == null) { findings.Errors.Add("no pixel grid detected"); await Json(ctx, rec, 400, new JsonObject { ["message"] = "No pixel grid was detected in this image: pass a pixel_size" }); return; }
+                double size = body["pixel_size"]!.GetValue<double>();
+                await Json(ctx, rec, 200, new JsonObject { ["url"] = F($"pixelart-{Guid.NewGuid():N}.png"), ["pixel_size"] = size, ["columns"] = (int)(512 / size), ["rows"] = (int)(384 / size) });
+                return;
+            }
+
             if (req.HttpMethod == "POST" && SyncPaths.Contains(api))
             {
                 string text = await new StreamReader(req.InputStream, Encoding.UTF8).ReadToEndAsync();

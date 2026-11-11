@@ -13,7 +13,7 @@
 - **Mirror**: play an Animation Clip or one of My Animations on the other side, left and right swapped, in all three tools.
 - **Animate 3D** can retarget an Animation Clip or one of My Animations onto a rigged model (0.5 credits), as well as animate from a text prompt.
 - **Animate Sprite** can play an Animation Clip or one of My Animations on a sprite, seen from the camera view the sprite is drawn from, as well as animate from a text description.
-- **Edit Image**: a new **Sprites & Images** subtab, and an **Edit** button on every generated image. **Edit Image** changes an image from a description (0.5 credits); **Edit with Mask** and **Erase with Mask** change or remove only the area a mask image marks (1 credit). Masks are images you pick from the project.
+- **Edit Image**: a new **Sprites & Images** subtab, and an **Edit** button on every generated image. **Edit Image** changes an image from a description (0.5 credits); **Edit with Mask** and **Erase with Mask** change or remove only the area a mask image marks (1 credit). Masks are images you pick from the project. **Convert to Pixel Art** (free) is there too, with the pixel size and number of colors you choose.
 - **Normal maps** for 2D lighting: a **Normal Map** option on **Generate Sprite** (free), **Animate Sprite** (0.5 credits) and **Directional Sprites** (0.5 credits per sheet, free with stills). Saving the image or sheet saves its normal map next to it as `<name>_normal.png`.
 - **Use Pixel Grid** on **Animate Sprite**: turn it off when a detected pixel grid is wrong for your sprite.
 - **Loop** for sound effects and music: generate audio that loops seamlessly.
@@ -96,7 +96,7 @@ The **Ludo AI Plugin** is a Unity Editor extension that integrates AI-powered as
 - 10 perspective options (Top-Down, Isometric, Side-Scroll, High Angle, etc.)
 - Multiple aspect ratios (1:1, 16:9, 9:16, etc.)
 - Batch generation (1-8 images at once)
-- Edit an image with a description, or only a masked area (Edit with Mask, Erase with Mask)
+- Edit an image with a description, or only a masked area (Edit with Mask, Erase with Mask); Convert to Pixel Art (free)
 
 ### Sprite Animation
 - Convert static sprites to animated spritesheets
@@ -286,6 +286,7 @@ Ludo's image edit modes, on one image. Click **Edit** on a generated image, or o
 - **Edit Image** (0.5 credits per result): describe the changes ("give the character a hat", "make it darker"). The whole image is redrawn, so colours and details outside the change can shift
 - **Edit with Mask** (1 credit per result): only the white part of the mask changes, filled from your description
 - **Erase with Mask** (1 credit per result): what is under the white part of the mask is removed. No description
+- **Convert to Pixel Art** (free): turns any image, broken AI pixel art included, into pixel art at about its own size. Set the **Pixel Size** (one art pixel, in the image's pixels; larger is coarser) or **Detect Pixel Size** for an image already on a pixel grid, and **Keep All Colors** or a number of **Colors** (2-256). **Save Pixel Art** saves a PNG; the result lists its size in art pixels (columns x rows). Limited to 20 conversions per 5 minutes
 
 A **mask** is a black-and-white image exactly the same size as the image: white marks the part to change, black the part to keep. Paint it in any image editor and pick it with **Select Mask** (it is sent as a PNG); the plugin has no mask painter. When both sizes are known, a mask of another size is refused before anything is sent.
 
