@@ -332,7 +332,7 @@ public class LudoAIPlugin : EditorWindow
     private readonly string[] spritesheetModelLabels = { "Hydra", "Griffin", "Forge", "Forge Pixel" };
     private readonly string[] spritesheetModelHints =
     {
-        "Best motion and prompt adherence, and also generates a sound effect. 3 credits/s.",
+        "Best movement and prompt adherence, and also generates a sound effect. 3 credits/s.",
         "Highest resolution and best image fidelity. 10 credits per animation, always 5 seconds.",
         "Cheapest alternative, for simple body shapes and simple actions. 1.5 credits/s.",
         "Best for low-res pixel art animations. 1.5 credits/s."
@@ -353,7 +353,7 @@ public class LudoAIPlugin : EditorWindow
     private readonly string[] transferModelLabels = { "Hydra", "Forge", "Forge Pixel" };
     private readonly string[] transferModelHints =
     {
-        "Best motion and prompt adherence, and also generates a sound effect. 3 credits/s.",
+        "Best movement and prompt adherence, and also generates a sound effect. 3 credits/s.",
         "Cheapest alternative, for simple body shapes and simple actions. 2 credits/s.",
         "Best for low-res pixel art animations. 2 credits/s."
     };
@@ -1727,9 +1727,16 @@ public class LudoAIPlugin : EditorWindow
             var made = response != null && response.Animations != null ? response.Animations.FindAll(a => !string.IsNullOrEmpty(a.Id)) : new List<PublicAnimation>();
             if (made.Count > 0)
             {
-                if (myAnimations == null) myAnimations = new List<PublicAnimation>();
+                bool loaded = myAnimations != null;
+                if (!loaded) myAnimations = new List<PublicAnimation>();
                 myAnimations.RemoveAll(a => made.Exists(m => m.Id == a.Id));
                 myAnimations.InsertRange(0, made); // newest first, like the list
+                if (!loaded)
+                {
+                    // The list had not loaded (or failed): read it whole, the new ones included.
+                    myAnimationsError = null;
+                    EditorCoroutineUtility.StartCoroutineOwnerless(LoadMyAnimations());
+                }
                 if (pick != null) pick(made[0].Id);
                 statusMessage = made.Count == 1
                     ? $"Animation \"{MyAnimationLabel(made[0])}\" generated and saved to My Animations."
@@ -2296,7 +2303,10 @@ public class LudoAIPlugin : EditorWindow
     private bool accessoryFlip = false;
     private bool accessoryGrip = true;
     private AccessoryFitResult accessoryFit = null;
-    private string accessoryFitSignature = null; // the settings the shown fit was made with
+    // The inputs the shown fit was made with (compared, never concatenated: GLBs can be 30MB of base64).
+    private string accessoryFitModel, accessoryFitItem, accessoryFitName, accessoryFitAdjustments;
+    // The model the listed items were fitted to: a list for another skeleton is cleared.
+    private string accessoryListModel = null;
     private Dictionary<string, List<Texture2D>> accessoryPreviewFrames = new Dictionary<string, List<Texture2D>>();
     private List<AccessoryEntry> directionalAccessories = new List<AccessoryEntry>();
     // The model the accessories go on, and the GLB holding them that replaced it in the field.
@@ -2336,15 +2346,28 @@ public class LudoAIPlugin : EditorWindow
         return a;
     }
 
-    private string AccessorySignature()
+    private bool AccessoryFitIsCurrent()
     {
-        return AccessoryBaseModel() + "|" + accessoryItemInput + "|" + accessoryName + "|" + JsonConvert.SerializeObject(AccessoryAdjustments());
+        return accessoryFit != null
+            && accessoryFitModel == AccessoryBaseModel()
+            && accessoryFitItem == accessoryItemInput
+            && accessoryFitName == accessoryName
+            && accessoryFitAdjustments == JsonConvert.SerializeObject(AccessoryAdjustments());
     }
 
     private void DrawDirectionalAccessories()
     {
         directionalShowAccessories = EditorGUILayout.Toggle("Add Weapons & Accessories", directionalShowAccessories);
         if (!directionalShowAccessories) return;
+
+        if (directionalAccessories.Count > 0 && accessoryListModel != null && accessoryListModel != AccessoryBaseModel())
+        {
+            // Placements name the bones of the model they were fitted to.
+            directionalAccessories.Clear();
+            accessoryFit = null;
+            ClearAccessoryPreviewFrames();
+            statusMessage = "The model changed, so the accessory list was cleared: fit the items to this model.";
+        }
 
         GUILayout.BeginVertical("box");
         GUILayout.Label("Accessories", EditorStyles.boldLabel);
@@ -2451,7 +2474,7 @@ public class LudoAIPlugin : EditorWindow
     private void DrawAccessoryFit()
     {
         if (accessoryFit == null) return;
-        bool current = accessoryFitSignature == AccessorySignature();
+        bool current = AccessoryFitIsCurrent();
         GUILayout.Label(current ? "Fit:" : "Fit (settings changed since: fit again to see them):", EditorStyles.boldLabel);
         string held = !string.IsNullOrEmpty(accessoryFit.Point) ? accessoryFit.Point : accessoryFit.Bone;
         GUILayout.Label($"Fitted as {accessoryFit.Kind}, held by {held}" + (accessoryFit.Bone != null && accessoryFit.Bone != held ? $" ({accessoryFit.Bone})" : ""), EditorStyles.miniLabel);
@@ -2504,7 +2527,7 @@ public class LudoAIPlugin : EditorWindow
         };
         // A fit made with exactly these settings gives the placement; otherwise Ludo
         // places the item from the same adjustments, as the fit would.
-        if (accessoryFit != null && accessoryFitSignature == AccessorySignature() && accessoryFit.Placement != null)
+        if (AccessoryFitIsCurrent() && accessoryFit.Placement != null)
         {
             entry.Placement = accessoryFit.Placement;
         }
@@ -2512,10 +2535,10 @@ public class LudoAIPlugin : EditorWindow
         string where = accessoryFit != null && entry.Placement != null && !string.IsNullOrEmpty(accessoryFit.Point) ? accessoryFit.Point : (accessoryPoint != "auto" ? accessoryPoint : "its kind's place");
         entry.Summary = $"{what}, {where}{(entry.Placement != null ? ", as fitted" : "")}";
         directionalAccessories.Add(entry);
+        accessoryListModel = AccessoryBaseModel();
         accessoryItemInput = "";
         accessoryName = "";
         accessoryFit = null;
-        accessoryFitSignature = null;
         ClearAccessoryPreviewFrames();
         statusMessage = $"{what} added. Put Accessories on the Model when the list is ready.";
     }
@@ -2530,7 +2553,8 @@ public class LudoAIPlugin : EditorWindow
 
     private IEnumerator FitAccessory()
     {
-        string signature = AccessorySignature();
+        string fitModel = AccessoryBaseModel(), fitItem = accessoryItemInput, fitName = accessoryName;
+        string fitAdjustments = JsonConvert.SerializeObject(AccessoryAdjustments());
         var payload = AccessoryAdjustments();
         payload["model"] = AccessoryBaseModel();
         payload["item"] = accessoryItemInput;
@@ -2551,7 +2575,10 @@ public class LudoAIPlugin : EditorWindow
         try
         {
             accessoryFit = JsonConvert.DeserializeObject<AccessoryFitResult>(result.Body);
-            accessoryFitSignature = signature;
+            accessoryFitModel = fitModel;
+            accessoryFitItem = fitItem;
+            accessoryFitName = fitName;
+            accessoryFitAdjustments = fitAdjustments;
             ClearAccessoryPreviewFrames();
             if (accessoryFit != null && accessoryFit.Previews != null)
             {
@@ -2590,7 +2617,9 @@ public class LudoAIPlugin : EditorWindow
             else foreach (var pair in entry.Adjustments) item[pair.Key] = pair.Value;
             items.Add(item);
         }
-        var payload = new Dictionary<string, object> { ["model"] = baseModel, ["items"] = items };
+        // The list is the full set: items saved on the model by an earlier pass must not stay
+        // (removed or moved ones would come back, or push it past 8).
+        var payload = new Dictionary<string, object> { ["model"] = baseModel, ["items"] = items, ["keep_saved"] = false };
 
         var settings = new JsonSerializerSettings { NullValueHandling = NullValueHandling.Ignore };
         var result = new EditorHttpResult();
@@ -3058,7 +3087,7 @@ public class LudoAIPlugin : EditorWindow
             {
                 EditorCoroutineUtility.StartCoroutineOwnerless(DownloadAndSaveImageUrl(currentNormalMap.NormalMapUrl, "Save Normal Map", $"Image_{DateTime.Now:yyyyMMdd_HHmmss}{NormalMapSuffix}", "Normal map"));
             }
-            if (GUILayout.Button("Save Image and Normal Map", GUILayout.Height(25)))
+            if (!string.IsNullOrEmpty(currentNormalMap.Url) && !currentNormalMap.Url.StartsWith("data:") && GUILayout.Button("Save Image and Normal Map", GUILayout.Height(25)))
             {
                 SaveImageToFile(currentNormalMap);
             }
@@ -3272,6 +3301,13 @@ public class LudoAIPlugin : EditorWindow
             height = texture.height;
             byte[] png = texture.EncodeToPNG();
             UnityEngine.Object.DestroyImmediate(texture);
+            if (png.Length > MaxUploadBytes)
+            {
+                width = height = 0;
+                statusMessage = "This image is larger than 15MB as a PNG, the most the API takes.";
+                EditorUtility.DisplayDialog("Error", statusMessage, "OK");
+                return null;
+            }
             return "data:image/png;base64," + Convert.ToBase64String(png);
         }
         catch (Exception e)

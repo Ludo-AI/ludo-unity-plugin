@@ -843,7 +843,7 @@ public static class Scenarios
         }
 
         // My Animations cannot be read: a message and a retry
-        var q = DirectionalPlugin(c, new FakeLudoApi.Behavior { AnimationsStatus = 503 });
+        var q = DirectionalPlugin(c, new FakeLudoApi.Behavior { AnimationsStatus = 503, PollsUntilDone = 1, PollAfterMs = 1, MyAnimations = new() { Animation("6a1f00000000000000000000older", "spin", "spin") } });
         q.Set("directionalAnimationSource", "my_animation");
         q.Gui();
         c.Require(q.RunUntilIdle(20), "My Animations request never finished");
@@ -853,7 +853,19 @@ public static class Scenarios
         q.Click("Retry Loading My Animations");
         q.Gui();
         c.Require(q.RunUntilIdle(20), "My Animations retry never finished");
-        c.Check(q.Get("myAnimations") != null, "retry did not load My Animations");
+        c.Check(PluginDriver.Count(q.Get("myAnimations")) == 1, "retry did not load My Animations");
+
+        // generating while the list never loaded: the whole list is read, the older ones too
+        var r = DirectionalPlugin(c, new FakeLudoApi.Behavior { AnimationsStatus = 503, PollsUntilDone = 1, PollAfterMs = 1, MyAnimations = new() { Animation("6a1f00000000000000000000older", "spin", "spin") } });
+        r.Set("directionalAnimationSource", "my_animation");
+        r.Gui();
+        c.Require(r.RunUntilIdle(20), "My Animations request never finished");
+        c.Api.B.AnimationsStatus = 200;
+        r.Set("newAnimationPrompt", "a cartwheel");
+        r.Click("Generate Animation (0.5 credits)");
+        c.Require(r.RunUntilIdle(20), "Generate Animation never finished");
+        c.Check(PluginDriver.Count(r.Get("myAnimations")) == 2 && !string.IsNullOrEmpty(r.Get<string>("directionalMyAnimationId")) && r.Get<string>("directionalMyAnimationId") != "6a1f00000000000000000000older",
+            $"after generating with no list, My Animations has {PluginDriver.Count(r.Get("myAnimations"))} (expected the older one and the new one, the new one picked)");
     }
 
     // ---------------------------------------------------------------- optional fields
@@ -1174,7 +1186,7 @@ public static class Scenarios
         body = LastBody(c, "/assets/sprite/directional-accessories");
         var items = body?["items"]?.AsArray();
         c.Require(items != null && items.Count == 2, $"attach items ({body})");
-        c.Check((string)body!["model"] == model, "attach did not go on the model");
+        c.Check((string)body!["model"] == model && body["keep_saved"]?.GetValue<bool>() == false, $"attach did not go on the model with the full set (keep_saved false): {body["model"]}, {body["keep_saved"]}");
         c.Check(items[0]!["placement"]?["base_scale"] != null && (string)items[0]!["name"] == "rusty sword" && items[0]!["size"] == null, $"a fitted item goes with its placement only ({items[0]})");
         c.Check(items[1]!["placement"] == null && (string)items[1]!["kind"] == "shield" && items[1]!["grip"]?.GetValue<bool>() == false, $"an unfitted item goes with its adjustments ({items[1]})");
         string composed = p.Get<string>("directionalModelInput");
@@ -1192,6 +1204,10 @@ public static class Scenarios
         c.Check(p.Get<string>("directionalModelInput") == model, "'Back to the Model Without Them' did not restore the model");
         p.Click("Remove");
         c.Check(PluginDriver.Count(p.Get("directionalAccessories")) == 1, "'Remove' did not take the item off the list");
+        // another model: the list fitted to the old skeleton goes
+        p.Set("directionalModelInput", FakeFile(c, "other-rigged.glb"));
+        p.Gui();
+        c.Check(PluginDriver.Count(p.Get("directionalAccessories")) == 0, "items fitted to another model stayed on the list");
         c.CheckClean(p);
 
         // a model with no skeleton: the API's message is shown
