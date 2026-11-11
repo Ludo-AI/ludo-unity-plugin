@@ -2319,8 +2319,8 @@
         ],
         "x-credit-description": "This endpoint consumes 0.2 credits per call",
         "x-credit-summary": "This endpoint consumes 0.2 credits per call",
-        "description": "Apply a curated animation preset to an already-rigged 3D model (retargeting). Pass the rigged GLB in `model` (URL or base64; the 3D asset file, not an AI model name) and a `preset_id` from the animation presets list (from listAnimationPresets; any preset id works). Any rig type can take a preset, though retargeting does not succeed on every model: when it does not, the job fails. The job result is one retargeted animation - a standalone animation-only GLB in `glb_url` plus an mp4 `preview_url` - in the same `animations` envelope as the animate endpoint. crop_loop trims the clip to its seamlessly-looping span (omit to follow the preset's own loop flag); in_place removes net travel so the character moves on the spot, as game-engine locomotion expects (omit to keep the preset's own travel). Credits are held when the job is accepted and refunded if it fails or is cancelled. Requires an API key (user scope). The call returns 202 with a job id - poll getApiJob (pass wait 30 to long-poll) honouring poll_after_ms, until status is succeeded; its result field is exactly the response documented for this operation. Synchronous responses are deprecated but still supported: pass `async: false` to block until the result is ready and receive it as the response body. Synchronous calls run on the same queue: the response carries an X-Ludo-Job-Id header, and a job still running after 15 minutes comes back as 202 with the job instead of an error. Each account may have up to 50 generations queued or running at once via the API; a request beyond that returns 429 (code PENDING_JOBS_LIMIT).\n\n> **Credits:** This endpoint consumes 0.2 credits per call.",
-        "x-mcp-description": "Apply a curated animation preset to an already-rigged 3D model (retargeting). Pass the rigged GLB in `model` (URL or base64; the 3D asset file, not an AI model name) and a `preset_id` from the animation presets list (from listAnimationPresets; any preset id works). Any rig type can take a preset, though retargeting does not succeed on every model: when it does not, the job fails. The job result is one retargeted animation - a standalone animation-only GLB in `glb_url` plus an mp4 `preview_url` - in the same `animations` envelope as the animate endpoint. crop_loop trims the clip to its seamlessly-looping span (omit to follow the preset's own loop flag); in_place removes net travel so the character moves on the spot, as game-engine locomotion expects (omit to keep the preset's own travel). Credits are held when the job is accepted and refunded if it fails or is cancelled. Requires an API key (user scope). The call returns 202 with a job id - poll getApiJob (pass wait 30 to long-poll) honouring poll_after_ms, until status is succeeded; its result field is exactly the response documented for this operation. Synchronous responses are deprecated but still supported: pass `async: false` to block until the result is ready and receive it as the response body. Synchronous calls run on the same queue: the response carries an X-Ludo-Job-Id header, and a job still running after 15 minutes comes back as 202 with the job instead of an error. Each account may have up to 50 generations queued or running at once via the API; a request beyond that returns 429 (code PENDING_JOBS_LIMIT).\n\nCredits: This endpoint consumes 0.2 credits per call."
+        "description": "Apply a curated animation preset to an already-rigged 3D model (retargeting). Pass the rigged GLB in `model` (URL or base64; the 3D asset file, not an AI model name) and a `preset_id` from the animation presets list (from listAnimationPresets; any preset id works). Any rig type can take a preset, though retargeting does not succeed on every model: when it does not, the job fails. The job result is one retargeted animation - a standalone animation-only GLB in `glb_url` plus an mp4 `preview_url` - in the same `animations` envelope as the animate endpoint. in_place removes net travel so the character moves on the spot, as game-engine locomotion expects (omit to apply it to animations that loop: a cycle stays on the spot, a one-shot keeps its travel). Credits are held when the job is accepted and refunded if it fails or is cancelled. Requires an API key (user scope). The call returns 202 with a job id - poll getApiJob (pass wait 30 to long-poll) honouring poll_after_ms, until status is succeeded; its result field is exactly the response documented for this operation. Synchronous responses are deprecated but still supported: pass `async: false` to block until the result is ready and receive it as the response body. Synchronous calls run on the same queue: the response carries an X-Ludo-Job-Id header, and a job still running after 15 minutes comes back as 202 with the job instead of an error. Each account may have up to 50 generations queued or running at once via the API; a request beyond that returns 429 (code PENDING_JOBS_LIMIT).\n\n> **Credits:** This endpoint consumes 0.2 credits per call.",
+        "x-mcp-description": "Apply a curated animation preset to an already-rigged 3D model (retargeting). Pass the rigged GLB in `model` (URL or base64; the 3D asset file, not an AI model name) and a `preset_id` from the animation presets list (from listAnimationPresets; any preset id works). Any rig type can take a preset, though retargeting does not succeed on every model: when it does not, the job fails. The job result is one retargeted animation - a standalone animation-only GLB in `glb_url` plus an mp4 `preview_url` - in the same `animations` envelope as the animate endpoint. in_place removes net travel so the character moves on the spot, as game-engine locomotion expects (omit to apply it to animations that loop: a cycle stays on the spot, a one-shot keeps its travel). Credits are held when the job is accepted and refunded if it fails or is cancelled. Requires an API key (user scope). The call returns 202 with a job id - poll getApiJob (pass wait 30 to long-poll) honouring poll_after_ms, until status is succeeded; its result field is exactly the response documented for this operation. Synchronous responses are deprecated but still supported: pass `async: false` to block until the result is ready and receive it as the response body. Synchronous calls run on the same queue: the response carries an X-Ludo-Job-Id header, and a job still running after 15 minutes comes back as 202 with the job instead of an error. Each account may have up to 50 generations queued or running at once via the API; a request beyond that returns 429 (code PENDING_JOBS_LIMIT).\n\nCredits: This endpoint consumes 0.2 credits per call."
       }
     },
     "/audio/sound-effect": {
@@ -5559,10 +5559,6 @@
             "type": "string",
             "description": "An animation preset id from listAnimationPresets, retargeted onto the model. Any rig type can take one; when the preset cannot be retargeted onto the model, the call returns an error. At most one of animation_url, preset_id and model_animation."
           },
-          "crop_loop": {
-            "type": "boolean",
-            "description": "With preset_id, trim the preset to the span that loops seamlessly. Omit to follow the preset's own loop flag."
-          },
           "model_animation": {
             "type": "string",
             "description": "The name of an animation the GLB itself carries. At most one of animation_url, preset_id and model_animation; with none, the preview is a single frame."
@@ -5674,10 +5670,6 @@
           "preset_id": {
             "type": "string",
             "description": "An animation preset id from listAnimationPresets, retargeted onto the model. Any rig type can take one; when the preset cannot be retargeted onto the model, the call returns an error. At most one of animation_url, preset_id and model_animation."
-          },
-          "crop_loop": {
-            "type": "boolean",
-            "description": "With preset_id, trim the preset to the span that loops seamlessly. Omit to follow the preset's own loop flag."
           },
           "model_animation": {
             "type": "string",
@@ -6438,13 +6430,9 @@
             "type": "string",
             "description": "id of an animation preset from listAnimationPresets. Any preset id from that list works."
           },
-          "crop_loop": {
-            "type": "boolean",
-            "description": "Trim the animation to the span that loops seamlessly. Omit to follow the preset's own loop flag. Ignored when no clean loop exists."
-          },
           "in_place": {
             "type": "boolean",
-            "description": "Remove the animation's net travel so the character moves on the spot (engine-driven locomotion). Omit to keep the preset's own travel."
+            "description": "Remove the animation's net travel so the character moves on the spot (engine-driven locomotion). Omit to apply it to animations that loop: a cycle stays on the spot, a one-shot keeps its travel."
           },
           "request_id": {
             "type": "string",

@@ -7,6 +7,10 @@
 
 ---
 
+## What's New in 1.0.7
+
+- **Directional Sprites: the Trim to Loop choice is gone.** Ludo now trims an animation preset by the preset's own loop flag and no longer takes a trim setting, so the plugin stops offering and sending it. Keep Ground Travel, Keep Vertical Motion and Seamless Loop work as before.
+
 ## What's New in 1.0.6
 
 - **Create 3D: Also Rig the Model uses the general rig**, which suits any shape. Ludo no longer takes a rig type there, so the **Rig Type** choice is gone from Create; the **Rig** tab still offers every rig type.
@@ -112,7 +116,7 @@ The **Ludo AI Plugin** is a Unity Editor extension that integrates AI-powered as
 
 ### Step 1: Install the Plugin
 
-1. Download **`LudoAI_Plugin_1.0.6.unitypackage`** from the [latest release](https://github.com/Ludo-AI/ludo-unity-plugin/releases/latest)
+1. Download **`LudoAI_Plugin_1.0.7.unitypackage`** from the [latest release](https://github.com/Ludo-AI/ludo-unity-plugin/releases/latest)
 2. In Unity: **Assets** → **Import Package** → **Custom Package...**, pick the file, and click **Import** (or double-click the file with your project open)
 3. Everything lands in `Assets/LudoAIPlugin/`, dependencies included (Editor Coroutines, Newtonsoft.Json, WebP decoder)
 
@@ -359,7 +363,7 @@ Render a 3D model into one spritesheet per direction, in a 2D style. Every direc
 3. Pick the **Animation**:
    - **None** - the rest pose, one frame per direction
    - **Animation GLB** - a clip from **Animate 3D**, made for this model's skeleton
-   - **Animation preset** - one of 600+ presets (walks, runs, attacks, idles, dances...), by category; any rig type can take one, though retargeting does not succeed on every model (when it does not, the render returns an error). **Trim to Loop** keeps the span that loops seamlessly
+   - **Animation preset** - one of 600+ presets (walks, runs, attacks, idles, dances...), by category; any rig type can take one, though retargeting does not succeed on every model (when it does not, the render returns an error). Ludo trims a preset by its own loop flag
    - **Animation inside the GLB** - the name of a clip the file already carries
    - **Keep Ground Travel** (off by default keeps the character in place) and **Keep Vertical Motion** (jumps, bobbing)
 4. Pick the **Perspective** (camera height, from Horizon to Top) and the **Directions** (where the camera stands around a character facing S; **All 8** or any subset)
@@ -1098,8 +1102,8 @@ Each voice family supports its own subset of these.
 
 ## Version Information
 
-**Plugin Version**: 1.0.5  
-**Last Updated**: October 2026  
+**Plugin Version**: 1.0.7  
+**Last Updated**: November 2026  
 **Unity Compatibility**: 2020.2+  
 **API Version**: Ludo AI API v1
 

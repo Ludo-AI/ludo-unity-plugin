@@ -402,7 +402,6 @@ public static class Scenarios
         p.Set("directionalPresetCategory", "Poses: Idles & Fidgets");
         p.Gui();
         c.Check(p.Get<string>("directionalPresetId") == "idle_breathing", $"category change did not pick its preset: {p.Get<string>("directionalPresetId")}");
-        p.Set("directionalCropLoop", "on");
 
         // a pixel style, with a numeric choice, a custom colour and an advanced bool changed
         p.Set("directionalStyleId", "pixel_art");
@@ -432,7 +431,8 @@ public static class Scenarios
         c.Check((string)body["style_params"]?["outline"] == "#ff0000", $"custom colour not sent: {body["style_params"]?.ToJsonString()}");
         c.Check(body["style_params"]?["palette"] == null, $"a default setting was sent: {body["style_params"]?.ToJsonString()}");
         c.Check(body["style_params"]?["highlights"]?.GetValueKind() == System.Text.Json.JsonValueKind.False, $"advanced bool not sent: {body["style_params"]?.ToJsonString()}");
-        c.Check((string)body["preset_id"] == "idle_breathing" && body["crop_loop"]?.GetValue<bool>() == true, $"preset not sent ({body})");
+        c.Check((string)body["preset_id"] == "idle_breathing", $"preset not sent ({body})");
+        c.Check(body["crop_loop"] == null, $"crop_loop sent: the API no longer takes it ({body})");
         c.Check(body["num_frames"] == null && body["target_frame_size"] == null, "preview sent sheet-only fields");
 
         p.Click("Render Spritesheets (3 credits)");

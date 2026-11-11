@@ -21,7 +21,7 @@ public class LudoAIPlugin : EditorWindow
     // Release version, sent on every API request as x-ludo-tool-version so Ludo can see
     // which builds are still in use. Bump it with every change under Assets/ (and the
     // README and package name to match): tools/check-version.py enforces this.
-    public const string PluginVersion = "1.0.6";
+    public const string PluginVersion = "1.0.7";
 
     // API key and URL for making requests to Ludo AI
     private string apiKey = ""; // API key loaded from EditorPrefs - user must input their own key
@@ -146,7 +146,6 @@ public class LudoAIPlugin : EditorWindow
     private string directionalAnimationUrl = "";
     private string directionalPresetCategory = "";
     private string directionalPresetId = "";
-    private string directionalCropLoop = "default";
     private string directionalModelAnimation = "";
     private string directionalPerspective = "isometric";
     private List<string> directionalDirections = new List<string> { "SW" };
@@ -1265,11 +1264,6 @@ public class LudoAIPlugin : EditorWindow
             Application.OpenURL(chosen.PreviewUrl);
         }
 
-        int cropIndex = Array.IndexOf(triStateOptions, directionalCropLoop);
-        if (cropIndex < 0) cropIndex = 0;
-        cropIndex = EditorGUILayout.Popup("Trim to Loop:", cropIndex, new[] { "Preset default", "Trim to the seamless loop", "Keep the whole clip" });
-        directionalCropLoop = triStateOptions[cropIndex];
-
         GUILayout.Label("Any rig type can take a preset, though retargeting does not succeed on every model: when it does not, the call returns an error.", EditorStyles.helpBox);
     }
 
@@ -1558,7 +1552,6 @@ public class LudoAIPlugin : EditorWindow
                 break;
             case "preset":
                 payload["preset_id"] = directionalPresetId;
-                if (directionalCropLoop != "default") payload["crop_loop"] = directionalCropLoop == "on";
                 break;
             case "model_animation":
                 payload["model_animation"] = directionalModelAnimation;
