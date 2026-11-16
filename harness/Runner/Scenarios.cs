@@ -778,12 +778,12 @@ public static class Scenarios
         c.Require(p.RunUntilIdle(20), "Generate Animation never finished");
         string made = p.Get<string>("spritesheetMyAnimationId");
         c.Require(!string.IsNullOrEmpty(made), "the generated animation was not picked");
-        p.Set("transferModel", "forge");
+        p.Set("transferModel", "ignis");
         p.Set("transferDuration", 1.5f);
         p.Click("Animate Sprite");
         c.Require(p.RunUntilIdle(20), "My Animation sprite never finished");
         body = LastBody(c, "/assets/sprite/transfer-motion");
-        c.Check((string)body?["animation_id"] == made && body?["preset_id"] == null && body?["mirror"]?.GetValue<bool>() == true && (string)body?["model"] == "forge", $"My Animation body ({body})");
+        c.Check((string)body?["animation_id"] == made && body?["preset_id"] == null && body?["mirror"]?.GetValue<bool>() == true && (string)body?["model"] == "ignis", $"My Animation body ({body})");
         p.Set("spritesheetMirror", false);
         p.Click("Animate Sprite");
         c.Require(p.RunUntilIdle(20), "unmirrored My Animation sprite never finished");
@@ -1471,10 +1471,9 @@ public static class Scenarios
         ("textureTypeOptions", "/assets/3d-model", "texture_type"),
         ("model3DModelOptions", "/assets/3d-model", "model"),
         ("model3DJointNamingOptions", "/assets/3d-model", "joint_naming"),
-        ("directionalPerspectiveOptions", "/assets/sprite/directional", "perspective"),
-        ("directionalPerspectiveOptions", "/assets/sprite/directional-stills", "perspective"),
-        ("directionalPerspectiveOptions", "/assets/sprite/directional-preview", "perspective"),
-        ("directionalDirectionOptions", "/assets/sprite/directional", "directions"),
+        // Directional Sprites' perspective and directions take a name or any number of
+        // degrees since Nov 2026, so the contract has no enum to hold those dropdowns
+        // to there. The same names are still checked against transfer-motion's enums below.
         ("transferModelOptions", "/assets/sprite/transfer-motion", "model"),
         ("transferFrameSizeOptions", "/assets/sprite/transfer-motion", "frame_size"),
         ("transferMarginModeOptions", "/assets/sprite/transfer-motion", "margin_ratio_mode"),

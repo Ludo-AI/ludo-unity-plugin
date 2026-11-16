@@ -21,7 +21,7 @@ public class LudoAIPlugin : EditorWindow
     // Release version, sent on every API request as x-ludo-tool-version so Ludo can see
     // which builds are still in use. Bump it with every change under Assets/ (and the
     // README and package name to match): tools/check-version.py enforces this.
-    public const string PluginVersion = "1.0.7";
+    public const string PluginVersion = "1.0.8";
 
     // API key and URL for making requests to Ludo AI
     private string apiKey = ""; // API key loaded from EditorPrefs - user must input their own key
@@ -326,10 +326,10 @@ public class LudoAIPlugin : EditorWindow
     private readonly string[] aspectRatioOptions = { "default", "ar_1_1", "ar_4_3", "ar_16_9", "ar_19_9", "ar_3_4", "ar_9_16", "ar_9_19" };
     private readonly string[] aspectRatioLabels = { "Default", "1:1", "4:3", "16:9", "19:9", "3:4", "9:16", "9:19" };
     
-    // Current sprite animation models; the API still accepts legacy ones (blitz, eagle, ...)
-    // but they are scheduled for removal.
-    private readonly string[] spritesheetModelOptions = { "hydra", "griffin-hd", "forge", "forge-pixel" };
-    private readonly string[] spritesheetModelLabels = { "Hydra", "Griffin", "Forge", "Forge Pixel" };
+    // Current sprite animation models; the API still accepts legacy ones (forge, blitz,
+    // eagle, ...) but they are scheduled for removal. Ignis replaced Forge on 2026-11-16.
+    private readonly string[] spritesheetModelOptions = { "hydra", "griffin-hd", "ignis", "ignis-pixel" };
+    private readonly string[] spritesheetModelLabels = { "Hydra", "Griffin", "Ignis", "Ignis Pixel" };
     private readonly string[] spritesheetModelHints =
     {
         "Best movement and prompt adherence, and also generates a sound effect. 3 credits/s.",
@@ -342,20 +342,20 @@ public class LudoAIPlugin : EditorWindow
     {
         ["hydra"] = new[] { 3f, 3.5f, 4f, 4.5f, 5f },
         ["griffin-hd"] = new[] { 5f },
-        ["forge"] = new[] { 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f, 4.5f, 5f },
-        ["forge-pixel"] = new[] { 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f, 4.5f, 5f }
+        ["ignis"] = new[] { 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f, 4.5f, 5f },
+        ["ignis-pixel"] = new[] { 1f, 1.5f, 2f, 2.5f, 3f, 3.5f, 4f, 4.5f, 5f }
     };
     // Where an animation comes from on Animate Sprite and Animate 3D.
     private readonly string[] animationSourceOptions = { "prompt", "preset", "my_animation" };
     private readonly string[] animationSourceLabels = { "Text Description", "Animation Clip", "My Animation" };
     // Animating a sprite from an Animation Clip or My Animation: its models and rates differ.
-    private readonly string[] transferModelOptions = { "hydra", "forge", "forge-pixel" };
-    private readonly string[] transferModelLabels = { "Hydra", "Forge", "Forge Pixel" };
+    private readonly string[] transferModelOptions = { "hydra", "ignis", "ignis-pixel" };
+    private readonly string[] transferModelLabels = { "Hydra", "Ignis", "Ignis Pixel" };
     private readonly string[] transferModelHints =
     {
         "Best movement and prompt adherence, and also generates a sound effect. 3 credits/s.",
-        "Cheapest alternative, for simple body shapes and simple actions. 2 credits/s.",
-        "Best for low-res pixel art animations. 2 credits/s."
+        "Cheapest alternative, for simple body shapes and simple actions. 1.5 credits/s.",
+        "Best for low-res pixel art animations. 1.5 credits/s."
     };
     private readonly int[] transferFrameSizeOptions = { 32, 64, 96, 128, 192, 256, 384, 0 };
     private readonly string[] transferFrameSizeLabels = { "32x32", "64x64", "96x96", "128x128", "192x192", "256x256", "384x384", "Max" };
@@ -3791,7 +3791,7 @@ public class LudoAIPlugin : EditorWindow
         spritesheetUsePixelGrid = EditorGUILayout.Toggle("Use Pixel Grid", spritesheetUsePixelGrid);
         if (!spritesheetUsePixelGrid)
         {
-            GUILayout.Label("Off packs the sheet as ordinary art, for when a detected pixel grid is wrong for your sprite (a smooth sprite coming back as coarse blocks). Forge Pixel always uses its grid.", EditorStyles.helpBox);
+            GUILayout.Label("Off packs the sheet as ordinary art, for when a detected pixel grid is wrong for your sprite (a smooth sprite coming back as coarse blocks). Ignis Pixel always uses its grid.", EditorStyles.helpBox);
         }
 
         GUILayout.Space(5);

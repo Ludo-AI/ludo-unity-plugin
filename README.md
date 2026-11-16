@@ -7,6 +7,10 @@
 
 ---
 
+## What's New in 1.0.8
+
+- **Ignis and Ignis Pixel replace Forge and Forge Pixel** in **Animate Sprite**: Ludo's new lowest-cost animation models, 1.5 credits per second from 1 to 5 seconds, whether you animate from a text description, an Animation Clip or one of My Animations (Forge cost 2 credits per second on the last two). Ignis is for simple body shapes and simple actions, Ignis Pixel for low-res pixel art. Forge and Forge Pixel are legacy on Ludo since 16 November 2026 and are no longer offered by the plugin.
+
 ## What's New in 1.0.7
 
 - **My Animations**: generate an animation from a short description (**Generate Animation**, 0.5 credits) and use it on any humanoid character. Your animations, including the ones made in the Ludo web app, are listed under **My Animation** in **Directional Sprites**, **Animate 3D** and **Animate Sprite**, next to the **Animation Clips** (what the plugin called animation presets).
@@ -42,7 +46,7 @@
 ## What's New in 1.0.3
 
 - **Works with the current Ludo AI API.** Generations now run as jobs on Ludo's queue: the plugin submits the job, shows its progress (queued / running and elapsed time) and picks up the result when it's ready. Version 1.0.2 stopped working when the API switched to jobs on September 10, 2026 - please update.
-- **Current sprite animation models**: Hydra (default, also generates a sound effect), Forge and Forge Pixel, each with the durations it supports.
+- **Current sprite animation models**: Hydra (default, also generates a sound effect), Griffin, Ignis and Ignis Pixel, each with the durations it supports.
 - **3D back view**: Create 3D accepts an optional image of the subject seen from behind, so the back of the model follows it instead of being invented.
 - **Up-to-date options**: art styles, perspectives, image types and frame sizes match the API; manual margins are set per axis (horizontal / vertical); optional GIF output.
 - **Saved files are what they say they are**: images and spritesheets are converted from WebP and saved as real PNGs, audio is saved as MP3, and "Save GIF Preview" works.
@@ -102,7 +106,7 @@ The **Ludo AI Plugin** is a Unity Editor extension that integrates AI-powered as
 
 ### Sprite Animation
 - Convert static sprites to animated spritesheets
-- Models: Hydra (with sound effect), Griffin (highest resolution), Forge, Forge Pixel (pixel art)
+- Models: Hydra (with sound effect), Griffin (highest resolution), Ignis (cheapest), Ignis Pixel (pixel art)
 - Control frame count (4-64 frames)
 - Frame sizes from 32x32 to 384x384, Max, AI upscale (1.5x) or matching the input frame
 - Export as spritesheet (PNG), GIF, and the sound effect (Hydra)
@@ -129,7 +133,7 @@ The **Ludo AI Plugin** is a Unity Editor extension that integrates AI-powered as
 
 ### Step 1: Install the Plugin
 
-1. Download **`LudoAI_Plugin_1.0.7.unitypackage`** from the [latest release](https://github.com/Ludo-AI/ludo-unity-plugin/releases/latest)
+1. Download **`LudoAI_Plugin_1.0.8.unitypackage`** from the [latest release](https://github.com/Ludo-AI/ludo-unity-plugin/releases/latest)
 2. In Unity: **Assets** → **Import Package** → **Custom Package...**, pick the file, and click **Import** (or double-click the file with your project open)
 3. Everything lands in `Assets/LudoAIPlugin/`, dependencies included (Editor Coroutines, Newtonsoft.Json, WebP decoder)
 
@@ -235,7 +239,7 @@ Turn static sprites into animated spritesheets.
 
 2. **Animation**: **Text Description** (the default), an **Animation Clip** or **My Animation**
    - **Text Description**: describe the animation, e.g. "walking animation cycle", "idle breathing animation"
-   - **Animation Clip** or **My Animation**: the move is played on your sprite. Pick the **Camera Height** and **Camera Direction** your sprite is drawn from, add **Extra Instructions** if you like ("keep the cape still") and turn on **Mirror** to swap left and right. Models here are Hydra (3 credits/s), Forge and Forge Pixel (2 credits/s); there is no Auto margin, AI upscale or Match input frame. See **My Animations** below
+   - **Animation Clip** or **My Animation**: the move is played on your sprite. Pick the **Camera Height** and **Camera Direction** your sprite is drawn from, add **Extra Instructions** if you like ("keep the cape still") and turn on **Mirror** to swap left and right. Models here are Hydra (3 credits/s), Ignis and Ignis Pixel (1.5 credits/s); there is no Auto margin, AI upscale or Match input frame. See **My Animations** below
 
 3. **Configure Frames**:
    - **Frame Count**: 4, 9, 16, 25, 36, 49, or 64 frames
@@ -244,14 +248,14 @@ Turn static sprites into animated spritesheets.
 
 4. **Crop & Margins**:
    - **Crop to Content**: Remove empty space
-   - **Use Pixel Grid** (on by default): packs the sheet on a detected pixel grid. Turn it off when the detected grid is wrong for your sprite (a smooth sprite coming back as coarse blocks). Forge Pixel always uses its grid
+   - **Use Pixel Grid** (on by default): packs the sheet on a detected pixel grid. Turn it off when the detected grid is wrong for your sprite (a smooth sprite coming back as coarse blocks). Ignis Pixel always uses its grid
    - **Margin Mode**: Auto, Manual, or None. In Manual, set the horizontal and vertical margins separately (e.g. more horizontal room for a sword slash, more vertical room for a jump)
 
 5. **Animation Model**:
    - **Hydra** (default): Best motion and prompt adherence; also generates a sound effect. 3 credits/s, 3-5 s
    - **Griffin**: Highest resolution and best image fidelity. 10 credits per animation, always 5 s
-   - **Forge**: Cheapest alternative, for simple body shapes and simple actions. 1.5 credits/s, 1-5 s
-   - **Forge Pixel**: Best for low-res pixel art. 1.5 credits/s, 1-5 s
+   - **Ignis**: Cheapest alternative, for simple body shapes and simple actions. 1.5 credits/s, 1-5 s
+   - **Ignis Pixel**: Best for low-res pixel art. 1.5 credits/s, 1-5 s
 
 6. **Duration**: The options offered depend on the model
 
@@ -1096,8 +1100,8 @@ Any perspective, Side-Scroll, Isometric, High Angle, Top-Down, 2.5D, First-Perso
 |-------|----------|-----------|
 | Hydra (default) | Most animations; also generates a sound effect | 3, 3.5, 4, 4.5, 5 s |
 | Griffin | Highest resolution and best image fidelity (10 credits per animation) | 5 s |
-| Forge | Simple body shapes and simple actions, lower cost | 1 - 5 s (0.5 s steps) |
-| Forge Pixel | Low-res pixel art | 1 - 5 s (0.5 s steps) |
+| Ignis | Simple body shapes and simple actions, lowest cost | 1 - 5 s (0.5 s steps) |
+| Ignis Pixel | Low-res pixel art | 1 - 5 s (0.5 s steps) |
 
 ### Voice Presets (35 Options)
 
@@ -1149,7 +1153,7 @@ Each voice family supports its own subset of these.
 
 ## Version Information
 
-**Plugin Version**: 1.0.7  
+**Plugin Version**: 1.0.8  
 **Last Updated**: November 2026  
 **Unity Compatibility**: 2020.2+  
 **API Version**: Ludo AI API v1
